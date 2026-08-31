@@ -1,0 +1,19 @@
+{
+  "name": "ink.irylia.caelix.core",
+  "version": "0.0.1-dev.1",
+  "displayName": "Caelix Core",
+  "description": "Core voxel data, streaming, ticking, and persistence for Caelix.",
+  "unity": "6000.5",
+  "dependencies": {
+    "com.unity.burst": "1.8.25",
+    "com.unity.collections": "2.6.3",
+    "com.unity.mathematics": "1.3.2"
+  },
+  "keywords": [
+    "voxel",
+    "caelix"
+  ],
+  "author": {
+    "name": "betairylia"
+  }
+}
