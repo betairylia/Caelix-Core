@@ -2,8 +2,8 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Mathematics;
+using Unity.Profiling;
 using UnityEngine;
-using UnityEngine.Profiling;
 using Caelix.Tick;
 using Caelix.Utils;
 
@@ -11,6 +11,8 @@ namespace Caelix
 {
     public class CaelixCoreWorld : MonoSingleton<CaelixCoreWorld>
     {
+        private static readonly ProfilerMarker s_TickMarker = new("Caelix Tick");
+
         public struct BrickInfo
         {
             public Utils.Guid128 EntityId;
@@ -122,9 +124,10 @@ namespace Caelix
         // And make RayCaster (player input) and Renderer work accroadingly
         private void Update()
         {
-            Profiler.BeginSample("Caelix Tick");
-            Tick();
-            Profiler.EndSample();
+            using (s_TickMarker.Auto())
+            {
+                Tick();
+            }
         }
 
         /// <summary>
