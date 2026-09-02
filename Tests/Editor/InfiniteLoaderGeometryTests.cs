@@ -12,7 +12,7 @@ namespace Caelix.Tests
         {
             var points = new List<int3>();
 
-            InfiniteLoader.GeneratePointsInIntersection(new int3(3, 2, 3), 3f, ref points);
+            SectorLoadGeometry.GeneratePointsInIntersection(new int3(3, 2, 3), 3f, ref points);
 
             Assert.That(points, Is.Not.Empty);
             Assert.That(points[0], Is.EqualTo(int3.zero));
@@ -24,7 +24,7 @@ namespace Caelix.Tests
             var points = new List<int3>();
             var bounds = new int3(3, 2, 4);
 
-            InfiniteLoader.GeneratePointsInIntersection(bounds, 5f, ref points);
+            SectorLoadGeometry.GeneratePointsInIntersection(bounds, 5f, ref points);
 
             foreach (var point in points)
             {
@@ -38,7 +38,7 @@ namespace Caelix.Tests
             var points = new List<int3>();
             float radius = 3f;
 
-            InfiniteLoader.GeneratePointsInIntersection(new int3(5, 1, 5), radius, ref points);
+            SectorLoadGeometry.GeneratePointsInIntersection(new int3(5, 1, 5), radius, ref points);
 
             foreach (var point in points)
             {
@@ -51,7 +51,7 @@ namespace Caelix.Tests
         {
             var points = new List<int3>();
 
-            InfiniteLoader.GeneratePointsInIntersection(new int3(3, 3, 3), 4f, ref points);
+            SectorLoadGeometry.GeneratePointsInIntersection(new int3(3, 3, 3), 4f, ref points);
 
             int previous = 0;
             foreach (var point in points)

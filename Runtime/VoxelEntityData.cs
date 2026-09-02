@@ -4,10 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Collections.NotBurstCompatible;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 using Caelix.IO;
 using Caelix.Utils;
 
@@ -20,8 +18,8 @@ namespace Caelix
         /// Key is the sector position in sector-space coordinates.
         /// </summary>
         // public Dictionary<Vector3Int, Sector> sectors = new Dictionary<Vector3Int, Sector>();
-        public LockableUnsafeHashMap<int3, SectorHandle> sectors;
-        public LockableUnsafeHashMap<int3, SectorNeighborHandles> sectorNeighbors;
+        public SharedHashMap<int3, SectorHandle> sectors;
+        public SharedHashMap<int3, SectorNeighborHandles> sectorNeighbors;
         // public NativeQueue<int3> sectorsToRemove;
 
         /// <summary>
@@ -46,6 +44,16 @@ namespace Caelix
         /// </summary>
         public bool isStatic;
 
+        /// <summary>
+        /// Protected from gameplay interaction tools (freeze, drag, break). Persisted in <c>.cxw</c>.
+        /// </summary>
+        public bool isProtected;
+
+        /// <summary>
+        /// Excluded from world save files. Authoring tools set this on their working entities.
+        /// </summary>
+        public bool excludeFromSave;
+
         // Persistence and Identity
         public Guid128 Guid;
 
@@ -60,6 +68,8 @@ namespace Caelix
             entityDirtyFlags = 0;
             entityRequireUpdateFlags = 0;
             isStatic = true;
+            isProtected = false;
+            excludeFromSave = false;
             Guid = Guid128.Zero;
         }
 
@@ -69,24 +79,66 @@ namespace Caelix
             Guid = Guid128.Random(ref random);
         }
 
-        public VoxelEntityData(Allocator allocator, Transform transform)
+
+
+        /// <summary>
+        /// Helper to get sector block position from sector position.
+        /// </summary>
+        public static int3 GetSectorBlockPos(int3 sectorPos)
         {
-            sectors = new(1, allocator);
-            sectorNeighbors = new(1, allocator);
-            this.transform = new RigidTransform(transform.rotation, transform.position);
-            previousTransform = this.transform;
-            linearVelocity = float3.zero;
-            angularVelocity = float3.zero;
-            entityDirtyFlags = 0;
-            entityRequireUpdateFlags = 0;
-            isStatic = true;
-            Guid = Guid128.Zero;
+            return sectorPos * Sector.SECTOR_SIZE_IN_BLOCKS;
         }
 
-        public VoxelEntityData(Allocator allocator, Transform transform, ref Unity.Mathematics.Random random)
-            : this(allocator, transform)
+        /// <summary>
+        /// Appends the entity-local position of every non-empty block to <paramref name="into"/>.
+        /// Only allocated bricks are visited. Returns false when <paramref name="maxCount"/> cut the
+        /// walk short (0 or less means no limit).
+        /// </summary>
+        public bool CollectSolidVoxelPositions(List<int3> into, int maxCount = 0)
         {
-            Guid = Guid128.Random(ref random);
+            if (into == null)
+            {
+                return true;
+            }
+
+            foreach (var sectorEntry in sectors)
+            {
+                int3 sectorOrigin = sectorEntry.Key * Sector.SECTOR_SIZE_IN_BLOCKS;
+                Sector* sector = sectorEntry.Value.Ptr;
+                if (sector == null)
+                {
+                    continue;
+                }
+
+                foreach (SectorNonEmptyBrickEnumerator.BrickRef brick in sector->EnumerateNonEmptyBricks())
+                {
+                    int3 brickOrigin = Sector.ToBrickPos((short)brick.BrickAbs) * Sector.SIZE_IN_BLOCKS;
+                    Block* blocks = sector->GetBrick<Block>(SectorSlotId.Block, brick.Bid);
+                    if (blocks == null)
+                    {
+                        continue;
+                    }
+
+                    for (int z = 0; z < Sector.SIZE_IN_BLOCKS; z++)
+                    for (int y = 0; y < Sector.SIZE_IN_BLOCKS; y++)
+                    for (int x = 0; x < Sector.SIZE_IN_BLOCKS; x++)
+                    {
+                        if (blocks[Sector.ToBlockIdx(x, y, z)].isEmpty)
+                        {
+                            continue;
+                        }
+
+                        if (maxCount > 0 && into.Count >= maxCount)
+                        {
+                            return false;
+                        }
+
+                        into.Add(sectorOrigin + brickOrigin + new int3(x, y, z));
+                    }
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -271,8 +323,8 @@ namespace Caelix
             var job = new DirtyPropagationJob
             {
                 allSectorPositions = allPositions,
-                sectors = sectors.AsReadOnly(),
-                sectorNeighbors = sectorNeighbors.AsReadOnly(),
+                sectors = sectors,
+                sectorNeighbors = sectorNeighbors,
                 neighborhoodType = NeighborhoodSettings.neighborhoodType,
                 flagsToPropagate = flagsToPropagate
             };
@@ -489,322 +541,6 @@ namespace Caelix
             //     sectorsToRemove.Dispose();
             //     sectorsToRemove = default;
             // }
-        }
-    }
-    
-    /// <summary>
-    /// Represents a voxel-based entity in the game world. This is the main component for managing
-    /// collections of voxel sectors and interfacing with the physics system.
-    /// </summary>
-    /// <remarks>
-    /// VoxelEntity organizes voxels into sectors for efficient storage. Each sector
-    /// contains a fixed-size grid of bricks, which in turn contain individual voxel blocks.
-    /// Rendering is managed separately by CaelixRenderer.
-    /// </remarks>
-    public unsafe partial class VoxelEntity : MonoBehaviour, IDisposable
-    {
-        private VoxelEntityData data;
-        public VoxelEntityData GetDataCopy() => data;
-        private static Unity.Mathematics.Random globalEntityRandomState;
-
-        [Tooltip("Marks this entity as never moving.")]
-        [SerializeField] private bool isStatic = true;
-
-        /// <summary>
-        /// Whether this entity never moves. The runtime value lives in <see cref="VoxelEntityData.isStatic"/>.
-        /// </summary>
-        /// <remarks>
-        /// Picked up by Awake, exactly like <see cref="PersistentGuid"/>.
-        /// </remarks>
-        public bool IsStatic
-        {
-            get => data.sectors.IsCreated ? data.isStatic : isStatic;
-            set
-            {
-                if (IsStatic == false && value == true)
-                {
-                    _shouldResetMotionVectors = true;
-                }
-                isStatic = value;
-                data.isStatic = value;
-            }
-        }
-        public bool _shouldResetMotionVectors;
-
-        // TODO: Wire me to SectorRenderer
-        // public bool shouldUseDynamicBLAS;
-
-        public Guid128 PersistentGuid
-        {
-            get => data.Guid;
-            set
-            {
-                data.Guid = value;
-            }
-        }
-
-        [Tooltip("Marks this entity as protected from gameplay interaction tools (freeze/drag/break). " +
-                 "Persisted in .cxw so the designation survives save/load and travels with the entity by GUID.")]
-        [SerializeField] private bool isProtected;
-
-        [Tooltip("Exclude this scene-authored entity from Caelix world save files. Authoring tools set this automatically; baked entities leave it off.")]
-        [SerializeField, HideInInspector] private bool excludeFromWorldSave;
-
-        /// <summary>
-        /// Whether this entity is protected from gameplay interaction (e.g. the main world that must
-        /// never be unfrozen or dragged). This is a plain serialized flag — it is not part of the
-        /// native tick data — and is round-tripped through the save format keyed by <see cref="PersistentGuid"/>.
-        /// </summary>
-        public bool IsProtected
-        {
-            get => isProtected;
-            set => isProtected = value;
-        }
-
-        /// <summary>
-        /// Whether world serialization must skip this entity. Scene-authoring tools use this for
-        /// generated working data. A baked, regular entity uses the default value of false.
-        /// </summary>
-        public bool ExcludeFromWorldSave
-        {
-            get => excludeFromWorldSave;
-            set => excludeFromWorldSave = value;
-        }
-
-        public static void InitializeRandomState(uint seed)
-        {
-            globalEntityRandomState = new Unity.Mathematics.Random(seed);
-        }
-
-        private void Awake()
-        {
-            // A loader (e.g. WorldLoader) may assign PersistentGuid while the GameObject is still
-            // inactive — that write lands on the default `data` struct BEFORE this Awake runs.
-            // Capture it first so the fresh allocation below doesn't clobber the restored identity
-            // with a new random guid, which would silently break save/load round-tripping of GUIDs.
-            Guid128 preAssignedGuid = data.Guid;
-            data = new VoxelEntityData(Allocator.Persistent, transform, ref globalEntityRandomState);
-            if (!preAssignedGuid.IsZero)
-            {
-                data.Guid = preAssignedGuid;
-            }
-
-            data.isStatic = isStatic;
-        }
-
-#if UNITY_EDITOR
-        /// <summary>
-        /// Pushes inspector edits of the authoring field into the live native data during play mode —
-        /// the inspector writes the serialized field directly, bypassing <see cref="IsStatic"/>.
-        /// </summary>
-        private void OnValidate()
-        {
-            if (!Application.isPlaying || !data.sectors.IsCreated) return;
-            if (data.isStatic == isStatic) return;
-            IsStatic = isStatic;
-        }
-#endif
-
-        public void CopyDataFrom(VoxelEntityData srcData)
-        {
-            data = srcData;
-        }
-        
-        public LockableUnsafeHashMap<int3, SectorHandle> Sectors => data.sectors;
-        public LockableUnsafeHashMap<int3, SectorNeighborHandles> Neighbors => data.sectorNeighbors;
-
-        /// <summary>
-        /// Adds an empty sector at the specified position.
-        /// </summary>
-        public void AddEmptySectorAt(int3 pos)
-        {
-            data.AddEmptySectorAt(pos);
-        }
-
-        /// <summary>
-        /// Copies a sector and adds it at the specified position.
-        /// </summary>
-        public void ShallowCopyAndAddSectorAt(int3 pos, Sector sector)
-        {
-            data.ShallowCopyAndAddSectorAt(pos, sector);
-        }
-
-        /// <summary>
-        /// Adds a sector handle at the specified position.
-        /// </summary>
-        public void AddSectorAt(int3 pos, SectorHandle sector)
-        {
-            data.AddSectorAt(pos, sector);
-        }
-
-        /// <summary>
-        /// Removes and disposes a sector at the specified position.
-        /// </summary>
-        /// <param name="pos">The sector position to remove.</param>
-        /// <returns>True if the sector was found and removed, false otherwise.</returns>
-        public bool RemoveSectorAt(int3 pos)
-        {
-            return data.RemoveSectorAt(pos);
-        }
-
-        /// <summary>
-        /// Syncs the Unity Transform to the VoxelEntityData struct (inward sync).
-        /// Copies position and rotation from Unity's Transform component to the native RigidTransform.
-        /// </summary>
-        public void SyncTransformToData()
-        {
-            data.SetTransformForDirtyPropagation(new RigidTransform(transform.rotation, transform.position));
-        }
-
-        // Sync current, don't touch previous
-        public void UpdateVelocity(float deltaTime)
-        {
-            data.ComputeVelocityForDirtyPropagation(deltaTime);
-        }
-
-        /// <summary>
-        /// Syncs the VoxelEntityData struct to the Unity Transform (outward sync).
-        /// Copies position and rotation from the native RigidTransform to Unity's Transform component.
-        /// </summary>
-        public void SyncTransformFromData()
-        {
-            transform.SetPositionAndRotation(data.transform.pos, data.transform.rot);
-        }
-
-        /// <summary>
-        /// Queue of sector positions that are scheduled for removal and cleanup.
-        /// Used to defer disposal of sectors until after rendering is complete.
-        /// </summary>
-        public Queue<int3> sectorsToRemove = new Queue<int3>();
-
-        /// <summary>
-        /// Called when the component is enabled. Registers this entity with the renderer and initializes physics body.
-        /// </summary>
-        private void OnEnable()
-        {
-            // Awake allocates the native storage and OnDisable releases it, so a component that is
-            // disabled and re-enabled would come back with a disposed hash map — every later write
-            // then throws a NullReferenceException from inside Unity.Collections. Re-allocate here,
-            // preserving the identity exactly like Awake does.
-            if (!data.sectors.IsCreated)
-            {
-                Guid128 preservedGuid = data.Guid;
-                data = new VoxelEntityData(Allocator.Persistent, transform, ref globalEntityRandomState);
-                if (!preservedGuid.IsZero)
-                {
-                    data.Guid = preservedGuid;
-                }
-
-                data.isStatic = isStatic;
-            }
-
-            CaelixCoreWorld.instance.AddEntity(this);
-        }
-
-        /// <summary>
-        /// Called when the component is disabled. Unregisters this entity from the renderer.
-        /// </summary>
-        private void OnDisable()
-        {
-            CaelixCoreWorld.instance.RemoveEntity(this);
-            Dispose();
-        }
-
-        /// <summary>
-        /// Disposes all resources used by this voxel entity, including all sectors and their data.
-        /// </summary>
-        public void Dispose()
-        {
-            data.Dispose();
-        }
-
-        /// <summary>
-        /// Calculates the total host (CPU) memory usage of all sectors in this entity.
-        /// </summary>
-        /// <returns>Total memory usage in kilobytes.</returns>
-        public ulong GetHostMemoryUsageKB()
-        {
-            return data.GetHostMemoryUsageKB();
-        }
-
-        /// <summary>
-        /// Helper to get sector block position from sector position.
-        /// </summary>
-        public static int3 GetSectorBlockPos(int3 sectorPos)
-        {
-            return sectorPos * Sector.SECTOR_SIZE_IN_BLOCKS;
-        }
-
-        /// <summary>
-        /// Gets the block at the specified world position.
-        /// </summary>
-        /// <param name="pos">World position of the block in block coordinates.</param>
-        /// <returns>The block at the specified position, or Block.Empty if no sector exists at that location.</returns>
-        public Block GetBlock(int3 pos)
-        {
-            return data.GetBlock(pos);
-        }
-
-        public T GetSlot<T>(SectorSlotId slotId, int3 pos) where T : unmanaged
-        {
-            return data.GetSlot<T>(slotId, pos);
-        }
-
-        /// <summary>
-        /// Sets the block at the specified world position. Creates a new sector if one doesn't exist.
-        /// </summary>
-        /// <param name="pos">World position of the block in block coordinates.</param>
-        /// <param name="b">The block data to set.</param>
-        /// <remarks>
-        /// If the sector doesn't exist at the calculated sector position, a new sector will be automatically created.
-        /// </remarks>
-        public void SetBlock(int3 pos, Block b)
-        {
-            data.SetBlock(pos, b);
-        }
-
-        public void SetSlot<T>(SectorSlotId slotId, int3 pos, T value)
-            where T : unmanaged, IEquatable<T>
-        {
-            data.SetSlot(slotId, pos, value);
-        }
-
-        /// <summary>
-        /// Propagates dirty flags to neighbor bricks. Call this once per tick after modifications.
-        /// </summary>
-        public JobHandle PropagateDirtyFlags(DirtyFlags flags = DirtyFlags.All, bool async = false)
-        {
-            return data.PropagateDirtyFlags(flags, async);
-        }
-
-        /// <summary>
-        /// Clears dirty flags for all sectors (call after propagation completes).
-        /// </summary>
-        public void ClearDirtyFlags() => data.ClearDirtyFlags();
-        
-        /// <summary>
-        /// Clears dirty flags for all sectors (call before propagation completes).
-        /// </summary>
-        public void ClearRequireUpdates() => data.ClearRequireUpdates();
-
-        public void RefreshAllocatedBrickLists() => data.RefreshAllocatedBrickLists();
-
-        /// <summary>
-        /// Gets the object-to-world transformation matrix for this entity.
-        /// </summary>
-        /// <returns>The local-to-world matrix of this entity's transform.</returns>
-        public float4x4 ObjectToWorld()
-        {
-            return transform.localToWorldMatrix;
-        }
-
-        /// <summary>
-        /// Gets the world-to-object transformation matrix for this entity.
-        /// </summary>
-        /// <returns>The world-to-local matrix of this entity's transform.</returns>
-        public float4x4 WorldToObject()
-        {
-            return transform.worldToLocalMatrix;
         }
     }
 }

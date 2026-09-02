@@ -1,5 +1,6 @@
 using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 
 namespace Caelix.IO
 {
@@ -8,77 +9,87 @@ namespace Caelix.IO
     /// The preview encodes occupancy + emission masks over a 2x2x2 sub-brick partition and an
     /// RGB565 average color, packed per <see cref="BrickPreview"/>.
     ///
-    /// The per-voxel scan is Burst-compiled (Direct Call from managed code).
+    /// The per-voxel scan is a Burst job run on the calling thread. A Burst direct call would
+    /// compile synchronously on first use and block the editor when no compiler is available.
     /// </summary>
-    [BurstCompile]
-    public static class PreviewBuilder
+    public static unsafe class PreviewBuilder
     {
         [BurstCompile]
-        public static unsafe void Build(Sector* sector, uint* dst)
+        private struct PreviewBuildJob : IJob
         {
-            // The preview has a value for every absolute brick position, including unallocated
-            // positions. Clear those in bulk, then let the shared enumerator own allocated-brick
-            // traversal so a future acceleration benefits this path too.
-            UnsafeUtility.MemClear(dst, Sector.BRICKS_IN_SECTOR * sizeof(uint));
+            [NativeDisableUnsafePtrRestriction] public Sector* sector;
+            [NativeDisableUnsafePtrRestriction] public uint* dst;
 
-            foreach (SectorNonEmptyBrickEnumerator.BrickRef brickRef in sector->EnumerateNonEmptyBricks())
+            public void Execute()
             {
-                int brickAbsIdx = brickRef.BrickAbs;
-                short bid = brickRef.Bid;
+                // The preview has a value for every absolute brick position, including unallocated
+                // positions. Clear those in bulk, then let the shared enumerator own allocated-brick
+                // traversal so a future acceleration benefits this path too.
+                UnsafeUtility.MemClear(dst, Sector.BRICKS_IN_SECTOR * sizeof(uint));
 
-                Block* brick = sector->GetBrick<Block>(SectorSlotId.Block, bid);
-                if (brick == null)
+                foreach (SectorNonEmptyBrickEnumerator.BrickRef brickRef in sector->EnumerateNonEmptyBricks())
                 {
-                    continue;
-                }
-
-                uint occupancy = 0, emission = 0;
-                ulong sumR = 0, sumG = 0, sumB = 0;
-                int count = 0;
-
-                for (int z = 0; z < Sector.SIZE_IN_BLOCKS; z++)
-                for (int y = 0; y < Sector.SIZE_IN_BLOCKS; y++)
-                for (int x = 0; x < Sector.SIZE_IN_BLOCKS; x++)
-                {
-                    Block block = brick[Sector.ToBlockIdx(x, y, z)];
-                    if (block.isEmpty) continue;
-
-                    int subIdx = BrickPreview.SubBrickIndex(
-                        x >> BrickPreview.SubBrickShift,
-                        y >> BrickPreview.SubBrickShift,
-                        z >> BrickPreview.SubBrickShift);
-                    occupancy |= 1u << subIdx;
-
-                    ushort id = block.id;
-                    if ((id & 0x1) != 0)
+                    int brickAbsIdx = brickRef.BrickAbs;
+                    short bid = brickRef.Bid;
+                    Block* brick = sector->GetBrick<Block>(SectorSlotId.Block, bid);
+                    if (brick == null)
                     {
-                        emission |= 1u << subIdx;
+                        continue;
                     }
 
-                    sumR += (uint)((id >> 11) & 0x1F);
-                    sumG += (uint)((id >> 6) & 0x1F);
-                    sumB += (uint)((id >> 1) & 0x1F);
-                    count++;
-                }
+                    uint occupancy = 0, emission = 0;
+                    ulong sumR = 0, sumG = 0, sumB = 0;
+                    int count = 0;
 
-                ushort rgb565;
-                if (count > 0)
-                {
-                    int r5 = (int)(sumR / (ulong)count);
-                    int g5 = (int)(sumG / (ulong)count);
-                    int b5 = (int)(sumB / (ulong)count);
-                    rgb565 = BrickPreview.ToRgb565(r5, g5, b5);
-                }
-                else
-                {
-                    rgb565 = 0;
-                }
+                    for (int z = 0; z < Sector.SIZE_IN_BLOCKS; z++)
+                    for (int y = 0; y < Sector.SIZE_IN_BLOCKS; y++)
+                    for (int x = 0; x < Sector.SIZE_IN_BLOCKS; x++)
+                    {
+                        Block block = brick[Sector.ToBlockIdx(x, y, z)];
+                        if (block.isEmpty) continue;
 
-                dst[brickAbsIdx] = BrickPreview.Pack(occupancy, emission, rgb565);
+                        int subIdx = BrickPreview.SubBrickIndex(
+                            x >> BrickPreview.SubBrickShift,
+                            y >> BrickPreview.SubBrickShift,
+                            z >> BrickPreview.SubBrickShift);
+                        occupancy |= 1u << subIdx;
+
+                        ushort id = block.id;
+                        if ((id & 0x1) != 0)
+                        {
+                            emission |= 1u << subIdx;
+                        }
+
+                        sumR += (uint)((id >> 11) & 0x1F);
+                        sumG += (uint)((id >> 6) & 0x1F);
+                        sumB += (uint)((id >> 1) & 0x1F);
+                        count++;
+                    }
+
+                    ushort rgb565;
+                    if (count > 0)
+                    {
+                        int r5 = (int)(sumR / (ulong)count);
+                        int g5 = (int)(sumG / (ulong)count);
+                        int b5 = (int)(sumB / (ulong)count);
+                        rgb565 = BrickPreview.ToRgb565(r5, g5, b5);
+                    }
+                    else
+                    {
+                        rgb565 = 0;
+                    }
+
+                    dst[brickAbsIdx] = BrickPreview.Pack(occupancy, emission, rgb565);
+                }
             }
         }
 
-        public static unsafe void Build(Sector* sector, uint[] dst)
+        public static void Build(Sector* sector, uint* dst)
+        {
+            new PreviewBuildJob { sector = sector, dst = dst }.Run();
+        }
+
+        public static void Build(Sector* sector, uint[] dst)
         {
             fixed (uint* p = dst) Build(sector, p);
         }

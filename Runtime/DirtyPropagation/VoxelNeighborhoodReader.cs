@@ -9,7 +9,7 @@ namespace Caelix
         public Guid128 EntityId;
         public RigidTransform LocalToWorld;
         public float4x4 WorldToLocal;
-        [ReadOnly] public LockableUnsafeHashMap<int3, SectorHandle> Sectors;
+        [ReadOnly] public SharedHashMap<int3, SectorHandle> Sectors;
         public float3 WorldAabbMin;
         public float3 WorldAabbMax;
 
@@ -74,7 +74,7 @@ namespace Caelix
         private SectorNeighborhoodReaderHelper localReader;
         private AlienOccupancyQuery alienQuery;
 
-        public static VoxelNeighborhoodReader Create(CaelixCoreWorld.BrickInfo brickInfo, AlienOccupancyQuery alienQuery)
+        public static VoxelNeighborhoodReader Create(BrickInfo brickInfo, AlienOccupancyQuery alienQuery)
         {
             return new VoxelNeighborhoodReader
             {
@@ -116,7 +116,7 @@ namespace Caelix
     {
         [ReadOnly] public AlienOccupancyQuery AlienQuery;
 
-        public VoxelNeighborhoodReader CreateReader(CaelixCoreWorld.BrickInfo brickInfo)
+        public VoxelNeighborhoodReader CreateReader(BrickInfo brickInfo)
         {
             return VoxelNeighborhoodReader.Create(brickInfo, AlienQuery);
         }

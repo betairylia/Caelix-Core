@@ -30,7 +30,7 @@ namespace Caelix.Tests.Editor
                 views[0] = BuildView(SelfEntityId, self.Data);
                 views[1] = BuildView(AlienEntityId, alien.Data);
 
-                var reader = VoxelNeighborhoodReader.Create(new CaelixCoreWorld.BrickInfo
+                var reader = VoxelNeighborhoodReader.Create(new BrickInfo
                 {
                     EntityId = SelfEntityId,
                     SectorPos = int3.zero,
@@ -63,7 +63,7 @@ namespace Caelix.Tests.Editor
                 views[0] = BuildView(SelfEntityId, self.Data);
                 views[1] = BuildView(AlienEntityId, alien.Data);
 
-                var reader = VoxelNeighborhoodReader.Create(new CaelixCoreWorld.BrickInfo
+                var reader = VoxelNeighborhoodReader.Create(new BrickInfo
                 {
                     EntityId = SelfEntityId,
                     SectorPos = int3.zero,
@@ -88,7 +88,7 @@ namespace Caelix.Tests.Editor
                 EntityId = id,
                 LocalToWorld = RigidTransform.identity,
                 WorldToLocal = float4x4.identity,
-                Sectors = data.sectors.AsReadOnly(),
+                Sectors = data.sectors,
                 WorldAabbMin = new float3(-512f),
                 WorldAabbMax = new float3(512f)
             };

@@ -5,63 +5,68 @@ using Caelix.Utils;
 namespace Caelix.IO
 {
     /// <summary>
-    /// Top-level save orchestrator. Walks a list of <see cref="VoxelEntity"/> instances,
-    /// serializes each entity's sectors (preview + Deflate-compressed payload), and writes
-    /// the resulting <c>.cxw</c> file.
+    /// One entity as handed to the saver. Everything the file needs lives on
+    /// <see cref="VoxelEntityData"/> except body presence and velocity, which the physics side
+    /// supplies because they live on the body record.
+    /// </summary>
+    public readonly struct EntitySaveRecord
+    {
+        public readonly Guid128 Guid;
+        public readonly VoxelEntityData Data;
+        public readonly bool HasBody;
+        public readonly float3 LinearVelocity;
+        public readonly float3 AngularVelocity;
+
+        public EntitySaveRecord(
+            Guid128 guid,
+            VoxelEntityData data,
+            bool hasBody = false,
+            float3 linearVelocity = default,
+            float3 angularVelocity = default)
+        {
+            Guid = guid;
+            Data = data;
+            HasBody = hasBody;
+            LinearVelocity = linearVelocity;
+            AngularVelocity = angularVelocity;
+        }
+    }
+
+    /// <summary>
+    /// Top-level save orchestrator. Walks entity records, serializes each entity's sectors
+    /// (preview + Deflate-compressed payload), and writes the resulting <c>.cxw</c> file.
+    /// Record-based: no Unity components are involved, so a headless server can save.
     /// </summary>
     public static class WorldSaver
     {
-        public static void Save(string path, IReadOnlyList<(Guid128 Guid, VoxelEntity Entity)> entities)
+        public static void Save(string path, IReadOnlyList<EntitySaveRecord> entities)
         {
             using var writer = SingleFileSaveStorage.OpenWrite(path);
             for (int i = 0; i < entities.Count; i++)
             {
-                var (guid, entity) = entities[i];
-                if (ShouldSkip(entity)) continue;
-                SaveEntity(writer, guid, entity);
+                EntitySaveRecord rec = entities[i];
+                if (rec.Data.excludeFromSave) continue;
+                SaveEntity(writer, in rec);
             }
             writer.Commit();
-        }
-
-        public static void Save(
-            string path,
-            IReadOnlyList<(Guid128 Guid, VoxelEntity Entity, bool HasBody, float3 LinearVelocity, float3 AngularVelocity)> entities)
-        {
-            using var writer = SingleFileSaveStorage.OpenWrite(path);
-            for (int i = 0; i < entities.Count; i++)
-            {
-                var (guid, entity, hasBody, linearVelocity, angularVelocity) = entities[i];
-                if (ShouldSkip(entity)) continue;
-                SaveEntity(writer, guid, entity, hasBody, linearVelocity, angularVelocity);
-            }
-            writer.Commit();
-        }
-
-        private static bool ShouldSkip(VoxelEntity entity)
-        {
-            return entity == null || entity.ExcludeFromWorldSave;
         }
 
         /// <summary>
-        /// Writes one entity. Staticness is read straight off the entity's own data
-        /// (<see cref="VoxelEntityData.isStatic"/>) rather than passed in, so a caller cannot persist a
-        /// value that disagrees with the running entity; only body presence and velocity come from
-        /// the caller, since those live on <c>VoxelBody</c>.
+        /// Writes one entity. Staticness and protection are read straight off the entity's own
+        /// data so a caller cannot persist a value that disagrees with the running entity.
         /// </summary>
-        public static unsafe void SaveEntity(
-            IWorldSaveWriter writer, Guid128 guid, VoxelEntity entity, bool hasBody = false,
-            float3 linearVelocity = default, float3 angularVelocity = default)
+        public static unsafe void SaveEntity(IWorldSaveWriter writer, in EntitySaveRecord rec)
         {
-            var data = entity.GetDataCopy();
+            VoxelEntityData data = rec.Data;
             var transformRec = new EntityTransformRecord(data.transform.pos, data.transform.rot);
-            bool isProtected = entity != null && entity.IsProtected;
 
             EntityFlags flags = EntityFlags.None;
-            if (hasBody) flags |= EntityFlags.HasBody;
+            if (rec.HasBody) flags |= EntityFlags.HasBody;
             if (data.isStatic) flags |= EntityFlags.Static;
 
             var entityRecord = new EntityRecord(
-                guid, transformRec, data.entityRequireUpdateFlags, flags, linearVelocity, angularVelocity, isProtected);
+                rec.Guid, transformRec, data.entityRequireUpdateFlags, flags,
+                rec.LinearVelocity, rec.AngularVelocity, data.isProtected);
             writer.WriteEntity(in entityRecord, EnumerateSectors(data));
         }
 

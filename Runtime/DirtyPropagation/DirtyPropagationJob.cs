@@ -74,8 +74,8 @@ namespace Caelix
     public unsafe struct DirtyPropagationJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<int3> allSectorPositions;
-        [ReadOnly] public LockableUnsafeHashMap<int3, SectorHandle> sectors;
-        [ReadOnly] public LockableUnsafeHashMap<int3, SectorNeighborHandles> sectorNeighbors;
+        [ReadOnly] public SharedHashMap<int3, SectorHandle> sectors;
+        [ReadOnly] public SharedHashMap<int3, SectorNeighborHandles> sectorNeighbors;
         [ReadOnly] public NeighborhoodType neighborhoodType;
         [ReadOnly] public DirtyFlags flagsToPropagate;
 
