@@ -21,10 +21,12 @@ namespace Caelix.Net
         BrickData = 8,
         Event = 9,
         QueryReply = 10,
+        TypedQueryReply = 11,
 
         // Client to server
         Command = 32,
         Query = 33,
+        TypedQuery = 34,
     }
 
     /// <summary>
@@ -115,6 +117,17 @@ namespace Caelix.Net
     public struct TypedPayloadHeader
     {
         public ushort TypeId;
+    }
+
+    /// <summary>
+    /// Header of a typed query (client to server) and of its reply (server to client). Followed by
+    /// the registered struct of <see cref="TypeId"/>, then any trailing payload bytes up to the end
+    /// of the message.
+    /// </summary>
+    public struct TypedQueryHeader
+    {
+        public ushort TypeId;
+        public uint RequestId;
     }
 
     public struct VoxelQueryMessage
