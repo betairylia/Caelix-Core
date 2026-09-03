@@ -119,6 +119,7 @@ namespace Caelix
                         continue;
                     }
 
+                    // TODO: Should use SectorBitmaskSlotEnumerator
                     for (int z = 0; z < Sector.SIZE_IN_BLOCKS; z++)
                     for (int y = 0; y < Sector.SIZE_IN_BLOCKS; y++)
                     for (int x = 0; x < Sector.SIZE_IN_BLOCKS; x++)
