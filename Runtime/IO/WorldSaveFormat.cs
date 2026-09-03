@@ -82,10 +82,6 @@ namespace Caelix.IO
     /// (<see cref="VoxelEntityData.isStatic"/>), not of its <c>VoxelBody</c>, so presence of a body
     /// and staticness are now two independent bits.
     /// </summary>
-    /// <remarks>
-    /// The component's <c>physicsEnabled</c> flag is still not persisted — it only controls Unity
-    /// Rigidbody creation, which the voxel physics never reads.
-    /// </remarks>
     [Flags]
     public enum EntityFlags : byte
     {
