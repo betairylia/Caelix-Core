@@ -191,6 +191,17 @@ namespace Caelix
             return data.Ptr + bid * BytesPerBrick;
         }
 
+        /// <summary>
+        /// Pointer to one voxel's <see cref="stride"/>-byte record inside brick <paramref name="bid"/>.
+        /// The single place that knows how a voxel is addressed inside a brick, so callers that copy
+        /// raw bytes (the replication codec, the voxel query reply) do not hand-roll the arithmetic.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public byte* GetVoxelPtr(short bid, int voxelIdxInBrick)
+        {
+            return data.Ptr + (bid * Sector.BLOCKS_IN_BRICK + voxelIdxInBrick) * stride;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void* GetBrickAuxPtr(short bid)
         {
@@ -233,6 +244,90 @@ namespace Caelix
                 SectorSlotStorage* slot = slotTable + i;
                 if (slot->IsCreated) { slot->ClearBrick(bid); }
             }
+        }
+
+        /// <summary>
+        /// Allocates the brick at <paramref name="brickIdx"/> in <paramref name="brickMap"/> and
+        /// makes every created slot in <paramref name="slotTable"/> hold storage for it: the slot
+        /// buffers grow when the id table outgrew its capacity, otherwise the reused brick slice is
+        /// cleared. Returns the new shared brick id.
+        /// </summary>
+        /// <remarks>
+        /// Precondition: <c>brickMap.indices[brickIdx] == BRICKID_EMPTY</c>. This helper takes no
+        /// lock and marks nothing dirty — callers keep their own allocation gate and their own
+        /// <c>MarkBrickDirty</c> call, because those differ per caller (the voxel writer runs under a
+        /// spin gate and only flags the Block slot, the replication apply runs on the main thread and
+        /// flags the replica's own bits). Works on whichever tables the caller passes, so the
+        /// snapshot backbuffer and the live tables share one implementation.
+        /// </remarks>
+        private static short AllocateBrick(
+            ref SparseBrickIdTable brickMap, SectorSlotStorage* slotTable, int brickIdx, int3 brickPos)
+        {
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+            if (brickMap.indices[brickIdx] != BRICKID_EMPTY)
+            {
+                throw new InvalidOperationException("AllocateBrick called for an already allocated brick.");
+            }
+#endif
+
+            brickMap.AddBrick(brickPos, out int newId, out bool exceedsCapacity);
+
+            if (exceedsCapacity)
+                ExtendCreatedSlots(slotTable, brickMap.Capacity);
+            else
+                ClearBrickForAllSlots(slotTable, (short)newId); // TODO: Do we really need to clear it?
+
+            return (short)newId;
+        }
+
+        /// <summary>
+        /// Makes slot <paramref name="slotIndex"/> of <paramref name="slotTable"/> exist with the
+        /// given per-voxel <paramref name="stride"/> and room for <paramref name="brickCapacity"/>
+        /// bricks, attaching a derived aux buffer when <paramref name="extraPerBrickBytes"/> is
+        /// positive. Returns the slot pointer. Safe to call repeatedly; only allocates or grows when
+        /// needed.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// The slot already exists with a different stride. Always thrown, not only under collections
+        /// checks: a mismatched stride off the wire is a protocol error and a mismatched stride from
+        /// code is a programming error, and both must surface.
+        /// </exception>
+        private static SectorSlotStorage* EnsureSlotStorage(
+            SectorSlotStorage* slotTable, int slotIndex, int stride, int brickCapacity,
+            Allocator allocator, int extraPerBrickBytes)
+        {
+            SectorSlotStorage* slot = slotTable + slotIndex;
+            if (!slot->IsCreated)
+            {
+                *slot = SectorSlotStorage.New(
+                    stride, brickCapacity, allocator, NativeArrayOptions.ClearMemory, extraPerBrickBytes);
+                return slot;
+            }
+
+            if (slot->stride != stride)
+            {
+                // The interpolated message only exists on the managed path: Burst cannot compile
+                // string.Format, and this runs inside Burst jobs through SetVoxelSlot. Under Burst
+                // the helper is discarded and the constant-message throw below fires instead, so the
+                // mismatch always surfaces either way.
+                ThrowSlotStrideMismatch(slotIndex, stride, slot->stride);
+                throw new InvalidOperationException("Sector slot stride does not match its storage stride.");
+            }
+
+            slot->EnsureBrickCapacity(brickCapacity);
+            if (extraPerBrickBytes > 0 && !slot->HasAux)
+            {
+                slot->AttachAux(extraPerBrickBytes, brickCapacity, allocator);
+            }
+
+            return slot;
+        }
+
+        [Unity.Burst.BurstDiscard]
+        private static void ThrowSlotStrideMismatch(int slotIndex, int stride, int storageStride)
+        {
+            throw new InvalidOperationException(
+                $"Slot {slotIndex} stride {stride} does not match its storage stride {storageStride}.");
         }
 
         internal static void CopySlotsTo(SectorSlotStorage* from, SectorSlotStorage* to, Allocator allocator)
@@ -287,25 +382,23 @@ namespace Caelix
         /// currently allocated brick, optionally attaching a derived aux buffer of
         /// <paramref name="extraPerBrickBytes"/> bytes per brick. Uses <c>sizeof(T)</c> as the voxel
         /// stride. Safe to call repeatedly; only allocates or grows when needed. Intended for bulk
-        /// slot producers (e.g. physics-info generation) that write directly into slot storage.
+        /// slot producers (e.g. physics-info generation) that write directly into slot storage. An
+        /// existing slot whose stride differs from <c>sizeof(T)</c> throws.
         /// </summary>
         public void EnsureSlotAllocated<T>(SectorSlotId slotId, int extraPerBrickBytes = 0) where T : unmanaged
+            => EnsureSlotAllocated(slotId, UnsafeUtility.SizeOf<T>(), extraPerBrickBytes);
+
+        /// <summary>
+        /// Untyped core of <see cref="EnsureSlotAllocated{T}"/>: ensures the per-voxel storage for
+        /// <paramref name="slotId"/> exists with a <paramref name="stride"/>-byte element and can
+        /// hold every currently allocated brick, optionally attaching a derived aux buffer of
+        /// <paramref name="extraPerBrickBytes"/> bytes per brick. For callers that learn the stride
+        /// at run time (a replicated slot record names its own stride) instead of from a C# type.
+        /// An existing slot whose stride differs throws.
+        /// </summary>
+        public void EnsureSlotAllocated(SectorSlotId slotId, int stride, int extraPerBrickBytes = 0)
         {
-            SectorSlotStorage* slot = slots + (int)slotId;
-            if (!slot->IsCreated)
-            {
-                slots[(int)slotId] = SectorSlotStorage.New(
-                    UnsafeUtility.SizeOf<T>(), brickMap.Capacity, _allocator,
-                    NativeArrayOptions.ClearMemory, extraPerBrickBytes);
-            }
-            else
-            {
-                slot->EnsureBrickCapacity(brickMap.Capacity);
-                if (extraPerBrickBytes > 0 && !slot->HasAux)
-                {
-                    slot->AttachAux(extraPerBrickBytes, brickMap.Capacity, _allocator);
-                }
-            }
+            EnsureSlotStorage(slots, (int)slotId, stride, brickMap.Capacity, _allocator, extraPerBrickBytes);
         }
 
         /// <summary>
@@ -444,7 +537,7 @@ namespace Caelix
             int bx = x >> SHIFT_IN_BLOCKS;
             int by = y >> SHIFT_IN_BLOCKS;
             int bz = z >> SHIFT_IN_BLOCKS;
-            int brickIdx = ToBrickIdx(bx, by, bz);
+            ResolveVoxel(x, y, z, out int brickIdx, out int voxelIdx);
             short bid = targetBrickMap.indices[brickIdx];
 
             // Brick does not exist, need alloc
@@ -458,13 +551,7 @@ namespace Caelix
                 // Re-check under the gate; another thread may have created this brick already.
                 if (targetBrickMap.indices[brickIdx] == BRICKID_EMPTY)
                 {
-                    targetBrickMap.AddBrick(new int3(bx, by, bz), out int newId, out bool exceedsCapacity);
-
-                    // Alloc or reuse new brick
-                    if (exceedsCapacity)
-                        ExtendCreatedSlots(targetSlots, targetBrickMap.Capacity);
-                    else
-                        ClearBrickForAllSlots(targetSlots, (short)newId); // TODO: Do we really need to clear it?
+                    AllocateBrick(ref targetBrickMap, targetSlots, brickIdx, new int3(bx, by, bz));
 
                     // Record the addition for Block slot
                     if (slotId == SectorSlotId.Block)
@@ -483,7 +570,6 @@ namespace Caelix
             // Brick exists, corresponding slot may not be allocated yet
 
             SectorSlotStorage* slot = targetSlots + (int)slotId;
-            int voxelIdx = ToBlockIdx(x & BRICK_MASK, y & BRICK_MASK, z & BRICK_MASK);
 
             // Check for same value
             // If slot !IsCreated, Get will return default
@@ -500,9 +586,9 @@ namespace Caelix
 
                 if (!slot->IsCreated)
                 {
-                    // TODO: Is this _allocator okay?
-                    targetSlots[(int)slotId] =
-                        SectorSlotStorage.New(UnsafeUtility.SizeOf<T>(), targetBrickMap.Capacity, _allocator);
+                    EnsureSlotStorage(
+                        targetSlots, (int)slotId, UnsafeUtility.SizeOf<T>(),
+                        targetBrickMap.Capacity, _allocator, 0);
                 }
 
                 ReleaseSpinGate(ref _sectorAllocLock);

@@ -3,13 +3,26 @@ using System.Runtime.CompilerServices;
 namespace Caelix
 {
     /// <summary>
-    /// Foreach-able, Burst-safe enumerator over a sector's allocated brick positions, yielding each
-    /// brick's absolute index and shared brick id. "Non-empty" follows the engine's historical
-    /// naming here: an allocated brick may currently contain only empty blocks. Backed by a plain
-    /// O(BRICKS_IN_SECTOR) sweep for now; the backing can be swapped later without touching callers.
-    /// Deliberately implements no <c>IEnumerator</c> interface, so it stays usable inside Burst jobs
-    /// — <c>foreach</c> binds to these members directly, with no boxing.
+    /// Walks a sector's allocated bricks, yielding each brick's absolute index and shared brick id.
+    /// "Non-empty" follows the engine's historical naming here: an allocated brick may currently
+    /// contain only empty blocks.
     /// </summary>
+    /// <remarks>
+    /// Reads no flag array — allocation alone selects a brick — so it is valid at any point in the
+    /// tick. Burst-safe and foreach-able: it deliberately implements no <c>IEnumerator</c>
+    /// interface, so <c>foreach</c> binds to these members directly with no boxing.
+    ///
+    /// The traversal is a plain linear sweep of the 4096-entry brick index table. That scan is the
+    /// cost every caller pays and the single place to optimize it — an allocated-brick bitmask, say
+    /// — because the two flag enumerators
+    /// (<see cref="SectorRequiredUpdateBrickEnumerator"/>, <see cref="SectorDirtyBrickEnumerator"/>)
+    /// and <see cref="SectorBitmaskSlotEnumerator{T}"/> are all built on it, and the backing can be
+    /// swapped without touching any caller.
+    ///
+    /// Callers: the IO preview builder and world loader, the Block occupancy-mask refresh, the
+    /// authoring tool (Caelix), the physics slot generation pass, the voxel collision manifold and
+    /// the brick overlap query (Caelix.Physics).
+    /// </remarks>
     public unsafe struct SectorNonEmptyBrickEnumerator
     {
         /// <summary>One allocated brick: its absolute index in the sector and its shared brick id.</summary>
@@ -78,5 +91,14 @@ namespace Caelix
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SectorNonEmptyBrickEnumerator EnumerateNonEmptyBricks()
             => new SectorNonEmptyBrickEnumerator(this);
+
+        /// <summary>
+        /// Iterates this sector's allocated bricks whose RAW dirty flags match
+        /// <paramref name="mask"/>; see <see cref="SectorDirtyBrickEnumerator"/> for when reading the
+        /// write side of the dirty contract is legitimate.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public SectorDirtyBrickEnumerator EnumerateDirtyBricks(DirtyFlags mask)
+            => new SectorDirtyBrickEnumerator(this, mask);
     }
 }

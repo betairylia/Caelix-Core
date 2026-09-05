@@ -113,11 +113,17 @@ namespace Caelix.Tests
                 src.SetVoxelSlot((SectorSlotId)2, 9, 10, 11, (short)42);
 
                 int brickIdx = Sector.ToBrickIdx(1, 1, 1);
-                var writer = new NetMessageWriter();
-                src.WriteReplicatedBrick(writer, brickIdx, Sector.DefaultReplicatedSlotMask);
+                byte[] buffer = new byte[src.ReplicatedBrickBytes(Sector.DefaultReplicatedSlotMask)];
+                int written;
+                fixed (byte* dstPtr = buffer)
+                {
+                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
+                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
+                    written = writer.Length;
+                }
 
                 ref Sector dst = ref target.Get();
-                var reader = new NetMessageReader(writer.Buffer, writer.Length);
+                var reader = new NetMessageReader(buffer, written);
                 dst.ApplyReplicatedBrick(brickIdx, ref reader);
                 Assert.That(reader.Remaining, Is.EqualTo(0));
 
@@ -150,19 +156,31 @@ namespace Caelix.Tests
                 ref Sector src = ref source.Get();
                 ref Sector dst = ref target.Get();
                 int brickIdx = Sector.ToBrickIdx(0, 0, 0);
-                var writer = new NetMessageWriter();
 
                 src.SetBlock(1, 1, 1, new Block(0x8001));
-                src.WriteReplicatedBrick(writer, brickIdx, Sector.DefaultReplicatedSlotMask);
-                var reader = new NetMessageReader(writer.Buffer, writer.Length);
+                byte[] buffer = new byte[src.ReplicatedBrickBytes(Sector.DefaultReplicatedSlotMask)];
+                int written;
+                fixed (byte* dstPtr = buffer)
+                {
+                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
+                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
+                    written = writer.Length;
+                }
+
+                var reader = new NetMessageReader(buffer, written);
                 dst.ApplyReplicatedBrick(brickIdx, ref reader);
                 dst.ClearAllDirtyFlags();
 
                 src.SetBlock(1, 1, 1, Block.Empty);
                 src.SetBlock(2, 2, 2, new Block(0x8003));
-                writer.Reset();
-                src.WriteReplicatedBrick(writer, brickIdx, Sector.DefaultReplicatedSlotMask);
-                reader = new NetMessageReader(writer.Buffer, writer.Length);
+                fixed (byte* dstPtr = buffer)
+                {
+                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
+                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
+                    written = writer.Length;
+                }
+
+                reader = new NetMessageReader(buffer, written);
                 dst.ApplyReplicatedBrick(brickIdx, ref reader);
 
                 Assert.That(dst.GetBlock(1, 1, 1).isEmpty, Is.True);

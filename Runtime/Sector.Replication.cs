@@ -38,11 +38,38 @@ namespace Caelix
         public const ushort DefaultReplicatedSlotMask = 1 << (int)SectorSlotId.Block;
 
         /// <summary>
+        /// Exact number of bytes <see cref="WriteReplicatedBrick"/> emits for one ALLOCATED brick
+        /// under <paramref name="slotMask"/>: the slot-count byte plus, per masked slot that exists
+        /// in this sector, its id byte, its stride field and one brick of voxel data.
+        /// </summary>
+        /// <remarks>
+        /// The value is a property of the SECTOR, not of a brick: it depends only on which slots
+        /// exist and how wide they are, and every allocated brick writes exactly this much. So a
+        /// caller sizing a buffer for a batch computes it once and multiplies by the brick count. An
+        /// unallocated brick writes one byte instead (the zero count), which this bound covers.
+        /// </remarks>
+        public int ReplicatedBrickBytes(ushort slotMask)
+        {
+            int bytes = 1; // u8 slotCount
+            for (int i = 0; i < MAX_SLOTS; i++)
+            {
+                if ((slotMask & (1 << i)) == 0) continue;
+                SectorSlotStorage* slot = slots + i;
+                if (!slot->IsCreated) continue;
+
+                bytes += 1 + 2 + slot->BytesPerBrick; // u8 slotId, u16 stride, byte[BLOCKS_IN_BRICK * stride]
+            }
+
+            return bytes;
+        }
+
+        /// <summary>
         /// Writes the replicated slots of the brick at <paramref name="brickIdx"/>. Slots that are
         /// not in <paramref name="slotMask"/> or not created in this sector are skipped. Writes a
-        /// zero count for an unallocated brick.
+        /// zero count for an unallocated brick. The writer must already have
+        /// <see cref="ReplicatedBrickBytes"/> bytes of room left.
         /// </summary>
-        public void WriteReplicatedBrick(NetMessageWriter writer, int brickIdx, ushort slotMask)
+        public void WriteReplicatedBrick(ref UnsafeNetWriter writer, int brickIdx, ushort slotMask)
         {
             short bid = brickMap.indices[brickIdx];
             if (bid == BRICKID_EMPTY)
@@ -68,8 +95,6 @@ namespace Caelix
             writer.Patch(countOffset, count);
         }
 
-        // TODO: VibeReview: Perhaps we need a unified API for ApplyBrickData?
-        // It feels a bit dangerous to not reuse here.
         /// <summary>
         /// Applies one brick written by <see cref="WriteReplicatedBrick"/>. Allocates the brick and
         /// any missing slot storage, copies the raw bytes, marks the brick dirty with
@@ -90,17 +115,7 @@ namespace Caelix
             bool isNew = bid == BRICKID_EMPTY;
             if (isNew)
             {
-                brickMap.AddBrick(brickPos, out int newId, out bool exceedsCapacity);
-                if (exceedsCapacity)
-                {
-                    ExtendCreatedSlots(slots, brickMap.Capacity);
-                }
-                else
-                {
-                    ClearBrickForAllSlots(slots, (short)newId);
-                }
-
-                bid = (short)newId;
+                bid = AllocateBrick(ref brickMap, slots, brickIdx, brickPos);
             }
 
             for (int rec = 0; rec < count; rec++)
@@ -114,30 +129,17 @@ namespace Caelix
                     throw new InvalidDataException($"Invalid replicated slot record: id {slotId}, stride {stride}.");
                 }
 
-                SectorSlotStorage* slot = slots + slotId;
-                if (!slot->IsCreated)
-                {
-                    *slot = SectorSlotStorage.New(stride, brickMap.Capacity, _allocator);
-                }
-                else if (slot->stride != stride)
-                {
-                    throw new InvalidDataException(
-                        $"Replicated slot {slotId} stride {stride} does not match local stride {slot->stride}.");
-                }
-
-                slot->EnsureBrickCapacity(brickMap.Capacity);
+                SectorSlotStorage* slot = EnsureSlotStorage(
+                    slots, slotId, stride, brickMap.Capacity, _allocator, 0);
                 reader.ReadBytes(slot->GetBrickPtr(bid), bytes);
             }
 
             DirtyFlags flags = ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None);
             MarkBrickDirty(brickIdx, flags, 0xFFFFFFFF);
 
+            // Widened to the whole brick: blockAABB is a grow-only upper bound (see its field doc).
             int3 origin = brickPos * SIZE_IN_BLOCKS;
             blockAABB.Update(origin);
-            
-            // TODO: VibeReview: Make proper AABBs.
-            // Will a proper AABB be generated later in somewhere else?
-            // Otherwise, this is quite dirty workaround.
             blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
         }
 
@@ -147,12 +149,8 @@ namespace Caelix
         /// </summary>
         public void WriteVoxelSlots(NetMessageWriter writer, int x, int y, int z, ushort slotMask)
         {
-            // TODO: VibeReview: Also maybe need an unified API for get brick data.
-            // Later we may change how data is arranged in bricks. Aren't those APIs existing now?
-            int bx = x >> SHIFT_IN_BLOCKS, by = y >> SHIFT_IN_BLOCKS, bz = z >> SHIFT_IN_BLOCKS;
-            int brickIdx = ToBrickIdx(bx, by, bz);
+            ResolveVoxel(x, y, z, out int brickIdx, out int voxelIdx);
             short bid = brickMap.indices[brickIdx];
-            int voxelIdx = ToBlockIdx(x & BRICK_MASK, y & BRICK_MASK, z & BRICK_MASK);
 
             int countOffset = writer.Reserve<byte>();
             byte count = 0;
@@ -171,8 +169,7 @@ namespace Caelix
                 }
                 else
                 {
-                    byte* voxel = (byte*)slot->GetBrickPtr(bid) + voxelIdx * slot->stride;
-                    writer.WriteBytes(voxel, slot->stride);
+                    writer.WriteBytes(slot->GetVoxelPtr(bid, voxelIdx), slot->stride);
                 }
 
                 count++;

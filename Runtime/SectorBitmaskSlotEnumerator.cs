@@ -25,6 +25,15 @@ namespace Caelix
     ///
     /// The selected slot must contain <typeparamref name="T"/> values and its aux must be a
     /// refreshed <see cref="BrickBitmask"/>. There is deliberately no data-scan fallback.
+    ///
+    /// Reads no dirty-flag array, so it is valid at any point in the tick; what it does depend on is
+    /// the slot's aux bitmask being current, which the aux refresh pass guarantees only once a
+    /// tick's edits have settled. The brick traversal is
+    /// <see cref="SectorNonEmptyBrickEnumerator"/>. Burst-compiled.
+    ///
+    /// Callers: <c>Sector.EnumerateNonEmptyBlocks</c> (Block slot, occupancy mask) drives the
+    /// physics mass/collision passes in Caelix.Physics; <c>Sector.EnumeratePhysicsKeyBlocks</c>
+    /// (PhysicsInfo slot, key mask) drives the physics tests.
     /// </remarks>
     [BurstCompile]
     public unsafe struct SectorBitmaskSlotEnumerator<T> where T : unmanaged
@@ -169,6 +178,15 @@ namespace Caelix
     /// the caller chooses sector-local or global block coordinates by passing the matching
     /// brick origin. Null data/bitmap pointers enumerate as empty.
     /// </summary>
+    /// <remarks>
+    /// Needs the same refreshed <see cref="BrickBitmask"/> aux as
+    /// <see cref="SectorBitmaskSlotEnumerator{T}"/>, and reads no dirty-flag array. It holds raw
+    /// pointers into one brick rather than a <c>Sector</c>, so it does no brick traversal at all.
+    /// Burst-compiled.
+    ///
+    /// Caller: the voxel collision manifold (Caelix.Physics), through
+    /// <c>Sector.EnumeratePhysicsKeyBlocksInBrick</c>, once per brick of the pair being tested.
+    /// </remarks>
     [BurstCompile]
     public unsafe struct BrickBitmaskSlotEnumerator<T> where T : unmanaged
     {

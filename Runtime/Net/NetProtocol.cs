@@ -11,6 +11,7 @@ namespace Caelix.Net
         Invalid = 0,
 
         // Server to client
+        /// <summary>Connection greeting, world id <see cref="NetHeader.NoWorld"/>. See <see cref="HelloMessage"/>.</summary>
         Hello = 1,
         EntitySpawn = 2,
         EntityDespawn = 3,
@@ -22,6 +23,10 @@ namespace Caelix.Net
         Event = 9,
         QueryReply = 10,
         TypedQueryReply = 11,
+        /// <summary>A world the client must create a replica for. See <see cref="WorldAddMessage"/>.</summary>
+        WorldAdd = 12,
+        /// <summary>A world the client must drop. See <see cref="WorldRemoveMessage"/>.</summary>
+        WorldRemove = 13,
 
         // Client to server
         Command = 32,
@@ -41,7 +46,22 @@ namespace Caelix.Net
 
         public const int Size = 1 + 2 + 4;
 
+        /// <summary>
+        /// World id of a message that is not scoped to one world, such as Hello. World id 0 is a
+        /// valid world (the default world), so the sentinel is the top value. Every dispatcher must
+        /// test for NoWorld before it looks a world up; a world-scoped message never carries it.
+        /// </summary>
+        public const ushort NoWorld = 0xFFFF;
+
         public static void Write(NetMessageWriter w, NetMessageType type, ushort worldId, uint tick)
+        {
+            w.Write((byte)type);
+            w.Write(worldId);
+            w.Write(tick);
+        }
+
+        /// <summary>Unmanaged, Burst-usable twin of the <see cref="NetMessageWriter"/> overload.</summary>
+        public static void Write(ref UnsafeNetWriter w, NetMessageType type, ushort worldId, uint tick)
         {
             w.Write((byte)type);
             w.Write(worldId);
@@ -59,12 +79,32 @@ namespace Caelix.Net
         }
     }
 
+    /// <summary>
+    /// Sent once per connection with header world id <see cref="NetHeader.NoWorld"/>. Worlds follow
+    /// as <see cref="NetMessageType.WorldAdd"/> messages.
+    /// </summary>
     public struct HelloMessage
     {
-        public ushort ReplicatedSlotMask;
         public float TickRate;
         public uint RegistryHash;
-        public ushort WorldCount;
+    }
+
+    /// <summary>
+    /// Header world id names the world. Sent before the first replication of that world; the client
+    /// creates its replica on receipt.
+    /// </summary>
+    public struct WorldAddMessage
+    {
+        public ushort ReplicatedSlotMask;
+    }
+
+    /// <summary>
+    /// Header world id names the world. The client disposes its replica on receipt.
+    /// </summary>
+    public struct WorldRemoveMessage
+    {
+        /// <summary>Padding so the payload is a non-empty struct that <c>Read&lt;T&gt;</c> can read.</summary>
+        public byte Reserved;
     }
 
     public struct EntitySpawnMessage

@@ -114,6 +114,24 @@ namespace Caelix
         /// </summary>
         public bool IsRendererEmpty => brickMap.Count == 0;
 
+        /// <summary>
+        /// Grow-only upper bound, in sector-local block coordinates, of the non-default Block
+        /// content of this sector. Four facts define it:
+        /// <list type="bullet">
+        /// <item>It grows in <see cref="SetVoxelSlot{T}"/> on a non-default write to the Block slot
+        /// (one block at a time), and in <see cref="ApplyReplicatedBrick"/> by a whole brick, because
+        /// the replication codec copies raw bytes and never inspects them.</item>
+        /// <item>It never shrinks. Clearing blocks, removing bricks and applying a snapshot all leave
+        /// it as it was, so it is a superset of the true bound, never the true bound.</item>
+        /// <item>It is not persisted. A sector loaded from a <c>.cxw</c> file starts with an empty
+        /// box, so the value is only meaningful for a sector that was written into this session.</item>
+        /// <item>Nothing reads it yet. The intended first reader is the physics
+        /// <c>VoxelCollider</c> bound.</item>
+        /// </list>
+        /// A reader that needs the exact bound should derive it instead, from the per-brick occupancy
+        /// masks (the Block slot's aux buffer) over the allocated bricks; that is tight and correct
+        /// after removals, at the cost of a pass over the sector.
+        /// </summary>
         public Caelix.Mathematics.AABBInt blockAABB;
 
         /// <summary>
@@ -308,6 +326,23 @@ namespace Caelix
             Utils.BurstAssertSimpleExperssionsOnly.IsTrue(z < SIZE_IN_BLOCKS);
 
             return (x + y * SIZE_IN_BLOCKS + z * SIZE_IN_BLOCKS_SQUARED);
+        }
+
+        /// <summary>
+        /// Splits sector-local block coordinates into the brick that contains them and the voxel's
+        /// flat index inside that brick — the one place that knows how a voxel address decomposes,
+        /// so callers do not repeat the shift-and-mask pair.
+        /// </summary>
+        /// <param name="x">Sector-local block X coordinate.</param>
+        /// <param name="y">Sector-local block Y coordinate.</param>
+        /// <param name="z">Sector-local block Z coordinate.</param>
+        /// <param name="brickIdx">The flat absolute brick index within the sector.</param>
+        /// <param name="voxelIdx">The flat voxel index within that brick (0-511).</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void ResolveVoxel(int x, int y, int z, out int brickIdx, out int voxelIdx)
+        {
+            brickIdx = ToBrickIdx(x >> SHIFT_IN_BLOCKS, y >> SHIFT_IN_BLOCKS, z >> SHIFT_IN_BLOCKS);
+            voxelIdx = ToBlockIdx(x & BRICK_MASK, y & BRICK_MASK, z & BRICK_MASK);
         }
 
         /// <summary>

@@ -6,13 +6,22 @@ using Unity.Mathematics;
 namespace Caelix
 {
     /// <summary>
-    /// Enumerates through all non-empty blocks within a sector.
-    /// Skips empty bricks entirely for efficiency.
+    /// Walks a sector's bricks whose require-update flags match a mask, yielding each brick's
+    /// compact brick id and its block-space origin. With <c>includeEmpty</c> it sweeps every brick
+    /// position instead, so unallocated positions that a neighbour flagged are visited too.
     /// </summary>
     /// <remarks>
-    /// This enumerator is Burst-compiled for performance. It iterates only through
-    /// allocated bricks and only through non-empty blocks within those bricks,
-    /// making it much more efficient than iterating through all possible block positions.
+    /// Reads <c>brickRequireUpdateFlags</c>, the READ side of the dirty-flag contract: those flags
+    /// are derived by dirty propagation from the raw dirty flags of a brick and its neighbours, and
+    /// they persist past the end-of-tick <c>ClearDirtyFlags</c>. This is the enumerator ordinary
+    /// consumers want. Its write-side twin is <see cref="SectorDirtyBrickEnumerator"/>; the two
+    /// differ only in which flag array they read.
+    ///
+    /// Burst-compiled. The allocated-brick traversal is delegated to
+    /// <see cref="SectorNonEmptyBrickEnumerator"/> whenever empty positions cannot match.
+    ///
+    /// Caller: <c>CollectBrickJob</c> in the Simulation assembly (Caelix), which gathers the bricks
+    /// the automata stage must step.
     /// </remarks>
     [BurstCompile]
     public struct SectorRequiredUpdateBrickEnumerator : IEnumerator<BrickIterator>
@@ -139,15 +148,34 @@ namespace Caelix
         }
     }
     
-    /// <summary>One dirty brick of a sector: its absolute index and the matched dirty flags.</summary>
+    /// <summary>
+    /// One dirty brick of a sector: its ABSOLUTE index in the 4096-entry brick table (not the
+    /// compact brick id) and the dirty flags of that brick that matched the enumerator's mask.
+    /// </summary>
     public struct DirtyBrickInfo
     {
         public short BrickIdx;
         public DirtyFlags Flags;
     }
 
-    // TODO: FIXME: Check
-    // TODO: Merge this with above?
+    /// <summary>
+    /// Walks a sector's allocated bricks whose RAW dirty flags match a mask, yielding each brick's
+    /// absolute index together with the matched flags.
+    /// </summary>
+    /// <remarks>
+    /// Reads <c>brickDirtyFlags</c>, the WRITE side of the dirty-flag contract: those flags are set
+    /// by voxel writers during a tick and cleared by <c>ClearDirtyFlags</c> at the end of it, so
+    /// outside the tick they read as zero. Enumerating them is therefore only legitimate from inside
+    /// the tick, after dirty propagation and before the clear. Ordinary consumers want the read-side
+    /// twin <see cref="SectorRequiredUpdateBrickEnumerator"/> instead; the two differ only in which
+    /// flag array they read.
+    ///
+    /// Burst-compiled, foreach-able, and built on <see cref="SectorNonEmptyBrickEnumerator"/>, so it
+    /// never visits an unallocated brick position.
+    ///
+    /// Caller: server replication (phase A build job, Simulation assembly in Caelix), which needs
+    /// exactly the bricks whose own contents changed this tick, not the propagated neighbourhood.
+    /// </remarks>
     [BurstCompile]
     public unsafe struct SectorDirtyBrickEnumerator
     {
