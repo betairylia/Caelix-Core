@@ -57,6 +57,8 @@ namespace Caelix
         // Persistence and Identity
         public Guid128 Guid;
 
+        private static long nextSectorInstanceId;
+
         public VoxelEntityData(Allocator allocator)
         {
             sectors = new(1, allocator);
@@ -172,6 +174,8 @@ namespace Caelix
         /// </summary>
         public void AddSectorAt(int3 pos, SectorHandle sector)
         {
+            // Entity topology is mutated on the main thread; jobs only use copies of the handles.
+            sector = sector.WithInstanceId(System.Threading.Interlocked.Increment(ref nextSectorInstanceId));
             sectors.Add(pos, sector);
             SectorNeighborHandles newHandles = SectorNeighborHandles.Create();
             sectorNeighbors.Add(pos, newHandles);

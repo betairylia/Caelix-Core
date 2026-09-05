@@ -17,6 +17,20 @@ namespace Caelix
     {
         [NativeDisableUnsafePtrRestriction]
         private Sector* _ptr;
+
+        /// <summary>
+        /// Identity of this attachment to an entity. Assigned on AddSectorAt, never persisted.
+        /// Copies retain it, and removing then adding at the same coordinate gets a new identity
+        /// even if the native allocator reuses the same address.
+        /// </summary>
+        public long InstanceId { get; private set; }
+
+        internal SectorHandle WithInstanceId(long instanceId)
+        {
+            var copy = this;
+            copy.InstanceId = instanceId;
+            return copy;
+        }
         
         public bool IsNull => _ptr == null;
 
@@ -48,6 +62,7 @@ namespace Caelix
         public SectorHandle(Sector* sectorPtr)
         {
             _ptr = sectorPtr;
+            InstanceId = 0;
         }
 
         /// <summary>

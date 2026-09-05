@@ -100,6 +100,50 @@ namespace Caelix.Tests
         }
 
         [Test]
+        public void LocalChannel_SelectiveReceiveLeavesOtherMessagesInOrder()
+        {
+            LocalChannel.CreatePair(out LocalChannel a, out LocalChannel b);
+            using (a)
+            using (b)
+            {
+                for (byte i = 0; i < 6; i++) a.Send(NetDelivery.Reliable, new byte[] { i });
+                Assert.That(b.TryReceive(m => m[0] == 3, out byte[] query), Is.True);
+                Assert.That(query[0], Is.EqualTo(3));
+                Assert.That(b.TryReceive(m => m[0] == 9, out _), Is.False);
+                Assert.That(b.PendingCount, Is.EqualTo(5));
+                Assert.That(b.PendingBytes, Is.EqualTo(5));
+                Assert.That(b.PeakPendingBytes, Is.EqualTo(6));
+                foreach (byte expected in new byte[] { 0, 1, 2, 4, 5 })
+                {
+                    Assert.That(b.TryReceive(out byte[] message), Is.True);
+                    Assert.That(message[0], Is.EqualTo(expected));
+                }
+                Assert.That(b.PendingBytes, Is.Zero);
+                Assert.That(b.TotalReceivedBytes, Is.EqualTo(6));
+            }
+        }
+
+        [Test]
+        public void SectorAttachment_RecreationHasNewIdentityAcrossEntityCopies()
+        {
+            var entity = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                entity.AddEmptySectorAt(int3.zero);
+                long original = entity.sectors[int3.zero].InstanceId;
+                var copy = entity;
+                copy.RemoveSectorAt(int3.zero);
+                copy.AddEmptySectorAt(int3.zero);
+                Assert.That(entity.sectors[int3.zero].InstanceId, Is.Not.EqualTo(original));
+                Assert.That(entity.sectors[int3.zero].InstanceId, Is.EqualTo(copy.sectors[int3.zero].InstanceId));
+            }
+            finally
+            {
+                entity.Dispose();
+            }
+        }
+
+        [Test]
         public void ReplicatedBrick_RoundTripsBlockSlotOnly()
         {
             SectorHandle source = SectorHandle.AllocEmpty();

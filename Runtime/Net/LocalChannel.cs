@@ -31,6 +31,11 @@ namespace Caelix.Net
 
         public int PendingCount => inbox.Count;
 
+        /// <summary>Payload bytes retained by this inbox, excluding managed object overhead.</summary>
+        public long PendingBytes { get; private set; }
+        public long PeakPendingBytes { get; private set; }
+        public long TotalReceivedBytes { get; private set; }
+
         public void Send(NetDelivery delivery, ReadOnlySpan<byte> payload)
         {
             if (!IsConnected)
@@ -41,6 +46,9 @@ namespace Caelix.Net
             // Both delivery modes behave as reliable in-process; the flag only matters on a real
             // transport. Copy so the sender may reuse its writer immediately.
             peer.inbox.Enqueue(payload.ToArray());
+            peer.PendingBytes += payload.Length;
+            peer.TotalReceivedBytes += payload.Length;
+            peer.PeakPendingBytes = Math.Max(peer.PeakPendingBytes, peer.PendingBytes);
         }
 
         public bool TryReceive(out byte[] message)
@@ -48,6 +56,7 @@ namespace Caelix.Net
             if (inbox.Count > 0)
             {
                 message = inbox.Dequeue();
+                PendingBytes -= message.Length;
                 return true;
             }
 
@@ -55,10 +64,35 @@ namespace Caelix.Net
             return false;
         }
 
+        public bool TryReceive(Predicate<byte[]> predicate, out byte[] message)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            message = null;
+            int count = inbox.Count;
+            // Complete the rotation even after finding a match, preserving the order of every
+            // retained message. Ordinary receive remains O(1).
+            for (int i = 0; i < count; i++)
+            {
+                byte[] candidate = inbox.Dequeue();
+                if (message == null && predicate(candidate))
+                {
+                    message = candidate;
+                    PendingBytes -= candidate.Length;
+                }
+                else
+                {
+                    inbox.Enqueue(candidate);
+                }
+            }
+
+            return message != null;
+        }
+
         public void Dispose()
         {
             disposed = true;
             inbox.Clear();
+            PendingBytes = 0;
             if (peer != null && peer.peer == this)
             {
                 peer.peer = null;

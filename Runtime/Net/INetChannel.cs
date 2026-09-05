@@ -29,6 +29,13 @@ namespace Caelix.Net
         /// </summary>
         bool TryReceive(out byte[] message);
 
+        /// <summary>
+        /// Dequeues the first message accepted by the predicate. Unmatched messages stay queued
+        /// in their original order. The predicate must not mutate the message or the channel.
+        /// Used to service queries while paused without consuming pending commands.
+        /// </summary>
+        bool TryReceive(Predicate<byte[]> predicate, out byte[] message);
+
         /// <summary>Number of messages waiting in the inbox.</summary>
         int PendingCount { get; }
     }
