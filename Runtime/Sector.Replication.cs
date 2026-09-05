@@ -68,6 +68,8 @@ namespace Caelix
             writer.Patch(countOffset, count);
         }
 
+        // TODO: VibeReview: Perhaps we need a unified API for ApplyBrickData?
+        // It feels a bit dangerous to not reuse here.
         /// <summary>
         /// Applies one brick written by <see cref="WriteReplicatedBrick"/>. Allocates the brick and
         /// any missing slot storage, copies the raw bytes, marks the brick dirty with
@@ -132,6 +134,10 @@ namespace Caelix
 
             int3 origin = brickPos * SIZE_IN_BLOCKS;
             blockAABB.Update(origin);
+            
+            // TODO: VibeReview: Make proper AABBs.
+            // Will a proper AABB be generated later in somewhere else?
+            // Otherwise, this is quite dirty workaround.
             blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
         }
 
@@ -141,6 +147,8 @@ namespace Caelix
         /// </summary>
         public void WriteVoxelSlots(NetMessageWriter writer, int x, int y, int z, ushort slotMask)
         {
+            // TODO: VibeReview: Also maybe need an unified API for get brick data.
+            // Later we may change how data is arranged in bricks. Aren't those APIs existing now?
             int bx = x >> SHIFT_IN_BLOCKS, by = y >> SHIFT_IN_BLOCKS, bz = z >> SHIFT_IN_BLOCKS;
             int brickIdx = ToBrickIdx(bx, by, bz);
             short bid = brickMap.indices[brickIdx];
