@@ -6,6 +6,16 @@ using Caelix.Net;
 
 namespace Caelix
 {
+    /// <summary>Validation result returned to the main thread by the Burst replication decoder.</summary>
+    public enum ReplicatedBrickBatchError : byte
+    {
+        None,
+        Truncated,
+        InvalidBrickIndex,
+        InvalidSlot,
+        SlotStrideMismatch,
+    }
+
     /// <summary>
     /// Brick-level replication codec. The server packs the replicated slots of one brick; the
     /// client applies them raw. Records carry slot id and stride, so the receiving side never
@@ -100,7 +110,7 @@ namespace Caelix
         /// any missing slot storage, copies the raw bytes, marks the brick dirty with
         /// <see cref="ReplicationApplyFlags"/> (plus <see cref="DirtyFlags.BlockBrickAdded"/> for a
         /// brick this sector did not have yet), and widens the block AABB to the brick bounds.
-        /// Main thread only; the client replica is never written from jobs.
+        /// Requires exclusive access to this sector, as does the native batch decoder.
         /// </summary>
         public void ApplyReplicatedBrick(int brickIdx, ref NetMessageReader reader)
         {
@@ -141,6 +151,89 @@ namespace Caelix
             int3 origin = brickPos * SIZE_IN_BLOCKS;
             blockAABB.Update(origin);
             blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
+        }
+
+        /// <summary>
+        /// Validates and applies the trailing payload of one BrickData message without managed
+        /// reads or exceptions. The caller owns the input memory and exclusive access to this
+        /// sector until the call finishes. Different sectors may be applied in parallel; messages
+        /// for the same sector must remain in receive order. Invalid messages change no bricks.
+        /// Refresh <see cref="UpdateNonEmptyBricks"/> after the last batch that allocates bricks.
+        /// </summary>
+        public ReplicatedBrickBatchError ApplyReplicatedBrickBatch(byte* payload, int length, int brickCount)
+        {
+            if (length < 0 || brickCount < 0 || brickCount > length / 5)
+                return ReplicatedBrickBatchError.Truncated;
+
+            // Validate the whole message before mutating storage. Track newly declared strides as
+            // well as existing ones: conflicting records in the same message are invalid too.
+            int* strides = stackalloc int[MAX_SLOTS];
+            for (int i = 0; i < MAX_SLOTS; i++)
+                strides[i] = slots[i].IsCreated ? slots[i].stride : 0;
+
+            int offset = 0;
+            for (int i = 0; i < brickCount; i++)
+            {
+                if (length - offset < 5) return ReplicatedBrickBatchError.Truncated;
+                int brickIdx = ReadReplicatedUShort(payload + offset);
+                int count = payload[offset + 4];
+                offset += 5; // brick index, informational server flags, slot count
+                if (brickIdx >= BRICKS_IN_SECTOR) return ReplicatedBrickBatchError.InvalidBrickIndex;
+                for (int s = 0; s < count; s++)
+                {
+                    if (length - offset < 3) return ReplicatedBrickBatchError.Truncated;
+                    int slotId = payload[offset];
+                    int stride = ReadReplicatedUShort(payload + offset + 1);
+                    offset += 3;
+                    if (slotId >= MAX_SLOTS || stride == 0) return ReplicatedBrickBatchError.InvalidSlot;
+                    if (strides[slotId] != 0 && strides[slotId] != stride)
+                        return ReplicatedBrickBatchError.SlotStrideMismatch;
+                    strides[slotId] = stride;
+                    int bytes = stride * BLOCKS_IN_BRICK;
+                    if (length - offset < bytes) return ReplicatedBrickBatchError.Truncated;
+                    offset += bytes;
+                }
+            }
+
+            offset = 0;
+            for (int i = 0; i < brickCount; i++)
+            {
+                int brickIdx = ReadReplicatedUShort(payload + offset);
+                int count = payload[offset + 4];
+                offset += 5;
+                if (count == 0) continue; // zero slots is a no-op, not a brick removal
+
+                int3 brickPos = ToBrickPos((short)brickIdx);
+                short bid = brickMap.indices[brickIdx];
+                bool isNew = bid == BRICKID_EMPTY;
+                if (isNew) bid = AllocateBrick(ref brickMap, slots, brickIdx, brickPos);
+
+                for (int s = 0; s < count; s++)
+                {
+                    int slotId = payload[offset];
+                    int stride = ReadReplicatedUShort(payload + offset + 1);
+                    offset += 3;
+                    SectorSlotStorage* slot = EnsureSlotStorage(
+                        slots, slotId, stride, brickMap.Capacity, _allocator, 0);
+                    int bytes = stride * BLOCKS_IN_BRICK;
+                    UnsafeUtility.MemCpy(slot->GetBrickPtr(bid), payload + offset, bytes);
+                    offset += bytes;
+                }
+
+                MarkBrickDirty(brickIdx,
+                    ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None), 0xFFFFFFFF);
+                int3 origin = brickPos * SIZE_IN_BLOCKS;
+                blockAABB.Update(origin);
+                blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
+            }
+            return ReplicatedBrickBatchError.None;
+        }
+
+        private static ushort ReadReplicatedUShort(byte* source)
+        {
+            // Wire records need not be aligned. Match NetMessageReader's native-endian codec.
+            UnsafeUtility.CopyPtrToStructure(source, out ushort value);
+            return value;
         }
 
         /// <summary>

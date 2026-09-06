@@ -256,7 +256,7 @@ namespace Caelix
         /// Precondition: <c>brickMap.indices[brickIdx] == BRICKID_EMPTY</c>. This helper takes no
         /// lock and marks nothing dirty — callers keep their own allocation gate and their own
         /// <c>MarkBrickDirty</c> call, because those differ per caller (the voxel writer runs under a
-        /// spin gate and only flags the Block slot, the replication apply runs on the main thread and
+        /// spin gate and only flags the Block slot, the replication apply exclusively owns the sector and
         /// flags the replica's own bits). Works on whichever tables the caller passes, so the
         /// snapshot backbuffer and the live tables share one implementation.
         /// </remarks>

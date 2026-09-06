@@ -86,6 +86,15 @@ The owner must complete jobs before disposing or replacing storage. Never dispos
 a borrowed handle or map. Do not retain brick pointers or enumerators across
 allocation, snapshot application, entity replacement, or sector removal.
 
+`Sector.ApplyReplicatedBrickBatch` accepts an unmanaged message payload and is
+compatible with Burst jobs. Its caller must keep the payload alive and grant
+exclusive access to the sector until it returns. Different sectors can run in
+parallel; writes within a sector, including allocation and dirty flags, remain
+serial. The decoder validates the whole message before modifying bricks and returns
+an error code for malformed records. It preserves slot strides, render dirty flags,
+and grow-only brick bounds. After a sequence that allocates bricks, refresh
+`NonEmptyBricks` before exposing the sector to consumers.
+
 During an active sector snapshot, normal reads use the live data and writes go
 to the snapshot buffers. After scheduled work completes, applying the snapshot
 commits the writes. This supports automata reading a stable state for the stage.

@@ -1,5 +1,9 @@
+using System;
 using NUnit.Framework;
 using Unity.Collections;
+using Unity.Burst;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 using Unity.Mathematics;
 using Caelix.Net;
 using Caelix.Utils;
@@ -12,6 +16,146 @@ namespace Caelix.Tests
     /// </summary>
     public unsafe class NetCodecTests
     {
+        [BurstCompile(CompileSynchronously = true)]
+        private struct ApplyBatchJob : IJob
+        {
+            public SectorHandle Target;
+            [NativeDisableUnsafePtrRestriction] public byte* Payload;
+            public int Length, Count;
+            public NativeArray<ReplicatedBrickBatchError> Result;
+            public void Execute() => Result[0] = Target.Get().ApplyReplicatedBrickBatch(Payload, Length, Count);
+        }
+
+        [Test]
+        public void NativeBrickBatch_MatchesManagedCodecWithMultipleSlotsAndRepeatedBricks()
+        {
+            SectorHandle source = SectorHandle.AllocEmpty();
+            SectorHandle expected = SectorHandle.AllocEmpty();
+            SectorHandle actual = SectorHandle.AllocEmpty();
+            try
+            {
+                var writer = new NetMessageWriter();
+                writer.Write((byte)99); // deliberately unaligned input
+                for (int b = 0; b < 40; b++)
+                {
+                    int index = b % 31;
+                    int3 p = Sector.ToBrickPos((short)index) * Sector.SIZE_IN_BLOCKS;
+                    source.Get().SetBlock(p.x, p.y, p.z, new Block((ushort)(0x8001 + b)));
+                    source.Get().SetVoxelSlot((SectorSlotId)2, p.x, p.y, p.z, b + 123);
+                    var bytes = new byte[source.Get().ReplicatedBrickBytes(0xffff)];
+                    fixed (byte* ptr = bytes)
+                    {
+                        var rawWriter = new UnsafeNetWriter(ptr, bytes.Length);
+                        source.Get().WriteReplicatedBrick(ref rawWriter, index, 0xffff);
+                        var reader = new NetMessageReader(bytes, rawWriter.Length);
+                        expected.Get().ApplyReplicatedBrick(index, ref reader);
+                        writer.Write((ushort)index);
+                        writer.Write((ushort)DirtyFlags.GeneralAutomata);
+                        writer.WriteBytes(bytes.AsSpan(0, rawWriter.Length));
+                    }
+                }
+                writer.Write((ushort)100);
+                writer.Write((ushort)0);
+                writer.Write((byte)0); // unallocated brick, no-op
+                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
+                fixed (byte* ptr = writer.Buffer)
+                    new ApplyBatchJob { Target = actual, Payload = ptr + 1, Length = writer.Length - 1,
+                        Count = 41, Result = result }.Schedule().Complete();
+                Assert.That(result[0], Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(actual.Get().brickMap.Count, Is.EqualTo(expected.Get().brickMap.Count));
+                Assert.That(actual.Get().blockAABB, Is.EqualTo(expected.Get().blockAABB));
+                foreach (var brick in expected.Get().EnumerateNonEmptyBricks())
+                {
+                    int index = brick.BrickAbs;
+                    short aid = actual.Get().brickMap.indices[index];
+                    short eid = expected.Get().brickMap.indices[index];
+                    foreach (int slot in new[] { 0, 2 })
+                        Assert.That(UnsafeUtility.MemCmp(actual.Get().slots[slot].GetBrickPtr(aid),
+                            expected.Get().slots[slot].GetBrickPtr(eid), expected.Get().slots[slot].BytesPerBrick), Is.Zero);
+                    Assert.That(actual.Get().brickDirtyFlags[index], Is.EqualTo(expected.Get().brickDirtyFlags[index]));
+                }
+            }
+            finally
+            {
+                source.Dispose(Allocator.Persistent);
+                expected.Dispose(Allocator.Persistent);
+                actual.Dispose(Allocator.Persistent);
+            }
+        }
+
+        [TestCase(ReplicatedBrickBatchError.Truncated)]
+        [TestCase(ReplicatedBrickBatchError.InvalidBrickIndex)]
+        [TestCase(ReplicatedBrickBatchError.InvalidSlot)]
+        [TestCase(ReplicatedBrickBatchError.SlotStrideMismatch)]
+        public void NativeBrickBatch_InvalidSecondRecordDoesNotApplyFirst(ReplicatedBrickBatchError error)
+        {
+            SectorHandle target = SectorHandle.AllocEmpty();
+            try
+            {
+                var writer = new NetMessageWriter();
+                for (int b = 0; b < 2; b++)
+                {
+                    writer.Write((ushort)(b == 1 && error == ReplicatedBrickBatchError.InvalidBrickIndex ? 4096 : b));
+                    writer.Write((ushort)0);
+                    writer.Write((byte)1);
+                    writer.Write((byte)(b == 1 && error == ReplicatedBrickBatchError.InvalidSlot ? 255 : 0));
+                    writer.Write((ushort)(b == 1 && error == ReplicatedBrickBatchError.SlotStrideMismatch ? 4 : 2));
+                    writer.WriteBytes(new byte[Sector.BLOCKS_IN_BRICK * 2]);
+                }
+                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
+                fixed (byte* ptr = writer.Buffer)
+                    new ApplyBatchJob { Target = target, Payload = ptr,
+                        Length = writer.Length - (error == ReplicatedBrickBatchError.Truncated ? 1 : 0),
+                        Count = 2, Result = result }.Schedule().Complete();
+                Assert.That(result[0], Is.EqualTo(error));
+                Assert.That(target.Get().brickMap.Count, Is.Zero);
+                Assert.That(target.Get().sectorDirtyFlags, Is.Zero);
+            }
+            finally { target.Dispose(Allocator.Persistent); }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void NativeBrickBatch_ExistingStoragePreservesStrideAndDirtySemantics(bool mismatch)
+        {
+            SectorHandle target = SectorHandle.AllocEmpty();
+            try
+            {
+                target.Get().SetBlock(1, 1, 1, new Block(0x8001));
+                target.Get().ClearAllDirtyFlags();
+                var writer = new NetMessageWriter();
+                writer.Write((ushort)0);
+                writer.Write((ushort)DirtyFlags.GeneralAutomata);
+                writer.Write((byte)1);
+                writer.Write((byte)SectorSlotId.Block);
+                int stride = mismatch ? 4 : 2;
+                writer.Write((ushort)stride);
+                writer.WriteBytes(new byte[Sector.BLOCKS_IN_BRICK * stride]);
+                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
+                fixed (byte* ptr = writer.Buffer)
+                    new ApplyBatchJob { Target = target, Payload = ptr, Length = writer.Length,
+                        Count = 1, Result = result }.Schedule().Complete();
+                Assert.That(result[0], Is.EqualTo(mismatch ? ReplicatedBrickBatchError.SlotStrideMismatch : ReplicatedBrickBatchError.None));
+                Assert.That(target.Get().GetBlock(1, 1, 1), Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
+                Assert.That(target.Get().brickMap.Count, Is.EqualTo(1));
+                Assert.That(target.Get().brickDirtyFlags[0], Is.EqualTo(mismatch ? 0 : (ushort)Sector.ReplicationApplyFlags));
+                target.Get().ClearAllDirtyFlags();
+                // Zero-slot records must preserve an allocated brick, its contents and flags.
+                writer.Reset();
+                writer.Write((ushort)0);
+                writer.Write((ushort)0);
+                writer.Write((byte)0);
+                fixed (byte* ptr = writer.Buffer)
+                    new ApplyBatchJob { Target = target, Payload = ptr, Length = writer.Length,
+                        Count = 1, Result = result }.Schedule().Complete();
+                Assert.That(result[0], Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(target.Get().GetBlock(1, 1, 1), Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
+                Assert.That(target.Get().brickMap.Count, Is.EqualTo(1));
+                Assert.That(target.Get().sectorDirtyFlags, Is.Zero);
+            }
+            finally { target.Dispose(Allocator.Persistent); }
+        }
+
         [Test]
         public void WriterReader_RoundTripsMixedValues()
         {
