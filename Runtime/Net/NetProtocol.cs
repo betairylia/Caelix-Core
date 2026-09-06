@@ -86,6 +86,9 @@ namespace Caelix.Net
     public struct HelloMessage
     {
         public float TickRate;
+        
+        // TODO: VibeReview: Maybe replace this with a "Command List" or something for validation?
+        // Client only need to be a subset of Server commands.
         public uint RegistryHash;
     }
 
