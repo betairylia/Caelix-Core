@@ -24,7 +24,7 @@ namespace Caelix
 
         /// <summary>
         /// The rigid transform representing position and rotation of this entity.
-        /// Synced with Unity Transform via SyncTransformToData/SyncTransformFromData.
+        /// The server owns the simulated pose; clients receive it through replication.
         /// </summary>
         public RigidTransform transform;
         public RigidTransform previousTransform;
