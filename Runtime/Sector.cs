@@ -119,7 +119,7 @@ namespace Caelix
         /// content of this sector. Four facts define it:
         /// <list type="bullet">
         /// <item>It grows in <see cref="SetVoxelSlot{T}"/> on a non-default write to the Block slot
-        /// (one block at a time), and in <see cref="ApplyReplicatedBrick"/> by a whole brick, because
+        /// (one block at a time), and in <see cref="ApplyReplicatedBrickBatch"/> by a whole brick, because
         /// the replication codec copies raw bytes and never inspects them.</item>
         /// <item>It never shrinks. Clearing blocks, removing bricks and applying a snapshot all leave
         /// it as it was, so it is a superset of the true bound, never the true bound.</item>

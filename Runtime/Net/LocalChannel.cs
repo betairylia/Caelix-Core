@@ -65,14 +65,12 @@ namespace Caelix.Net
         }
 
         /// <summary>
-        /// Scan through the whole inbox and return the first message with predicate(message) == true.
-        /// This method will do a full scan over the inbox no matter what.
+        /// Scans the whole inbox once and returns the first message the predicate accepts. Every
+        /// other message stays queued in its original order, so a selective receive never reorders
+        /// what it leaves behind. The scan runs to the end even after a match, so the cost is
+        /// O(pending) per call; the ordinary <see cref="TryReceive(out byte[])"/> stays O(1).
         /// </summary>
-        /// <param name="predicate"></param>
-        /// <param name="message"></param>
-        /// <returns></returns>
-        /// <exception cref="ArgumentNullException"></exception>
-        public bool TryReceive_RotateQueue(Predicate<byte[]> predicate, out byte[] message)
+        public bool TryReceive(Predicate<byte[]> predicate, out byte[] message)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
             message = null;

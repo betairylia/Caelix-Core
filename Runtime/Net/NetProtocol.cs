@@ -1,3 +1,4 @@
+using System;
 using Unity.Mathematics;
 using Caelix.Utils;
 
@@ -76,6 +77,15 @@ namespace Caelix.Net
                 WorldId = r.Read<ushort>(),
                 Tick = r.Read<uint>(),
             };
+        }
+
+        /// <summary>
+        /// The type of a framed message without consuming it. <see cref="NetMessageType.Invalid"/>
+        /// for a message shorter than the header. The one place that knows the type byte comes first.
+        /// </summary>
+        public static NetMessageType PeekType(ReadOnlySpan<byte> message)
+        {
+            return message.Length >= Size ? (NetMessageType)message[0] : NetMessageType.Invalid;
         }
     }
 

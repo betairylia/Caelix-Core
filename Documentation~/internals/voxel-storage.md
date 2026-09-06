@@ -86,6 +86,11 @@ The owner must complete jobs before disposing or replacing storage. Never dispos
 a borrowed handle or map. Do not retain brick pointers or enumerators across
 allocation, snapshot application, entity replacement, or sector removal.
 
+`VoxelEntityData.RemoveSectorAt` first marks the facing bricks of every surviving
+neighbour sector dirty with `GeometryWithLocalNeighbor` and an empty direction
+mask, so consumers that culled boundary data against the removed storage are
+rescheduled by the next propagation and no sector is created.
+
 `Sector.ApplyReplicatedBrickBatch` accepts an unmanaged message payload and is
 compatible with Burst jobs. Its caller must keep the payload alive and grant
 exclusive access to the sector until it returns. Different sectors can run in

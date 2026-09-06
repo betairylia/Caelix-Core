@@ -26,8 +26,26 @@ namespace Caelix.Tests
             public void Execute() => Result[0] = Target.Get().ApplyReplicatedBrickBatch(Payload, Length, Count);
         }
 
+        /// <summary>
+        /// Applies one brick record through the batch decoder: a one-brick BrickData payload is
+        /// <c>u16 brickIdx, u16 dirtyFlags</c> followed by the bytes <see cref="Sector.WriteReplicatedBrick"/> wrote.
+        /// </summary>
+        private static void ApplyOneBrick(SectorHandle target, int brickIdx, byte[] brickBytes, int written)
+        {
+            var payload = new byte[4 + written];
+            payload[0] = (byte)(brickIdx & 0xFF);
+            payload[1] = (byte)(brickIdx >> 8);
+            // payload[2..3] = dirty flags 0 (informational)
+            Buffer.BlockCopy(brickBytes, 0, payload, 4, written);
+            fixed (byte* ptr = payload)
+            {
+                ReplicatedBrickBatchError error = target.Get().ApplyReplicatedBrickBatch(ptr, payload.Length, 1);
+                Assert.That(error, Is.EqualTo(ReplicatedBrickBatchError.None));
+            }
+        }
+
         [Test]
-        public void NativeBrickBatch_MatchesManagedCodecWithMultipleSlotsAndRepeatedBricks()
+        public void NativeBrickBatch_MatchesPerBrickApplyWithMultipleSlotsAndRepeatedBricks()
         {
             SectorHandle source = SectorHandle.AllocEmpty();
             SectorHandle expected = SectorHandle.AllocEmpty();
@@ -47,8 +65,7 @@ namespace Caelix.Tests
                     {
                         var rawWriter = new UnsafeNetWriter(ptr, bytes.Length);
                         source.Get().WriteReplicatedBrick(ref rawWriter, index, 0xffff);
-                        var reader = new NetMessageReader(bytes, rawWriter.Length);
-                        expected.Get().ApplyReplicatedBrick(index, ref reader);
+                        ApplyOneBrick(expected, index, bytes, rawWriter.Length);
                         writer.Write((ushort)index);
                         writer.Write((ushort)DirtyFlags.GeneralAutomata);
                         writer.WriteBytes(bytes.AsSpan(0, rawWriter.Length));
@@ -251,9 +268,9 @@ namespace Caelix.Tests
             using (b)
             {
                 for (byte i = 0; i < 6; i++) a.Send(NetDelivery.Reliable, new byte[] { i });
-                Assert.That(b.TryReceive_RotateQueue(m => m[0] == 3, out byte[] query), Is.True);
+                Assert.That(b.TryReceive(m => m[0] == 3, out byte[] query), Is.True);
                 Assert.That(query[0], Is.EqualTo(3));
-                Assert.That(b.TryReceive_RotateQueue(m => m[0] == 9, out _), Is.False);
+                Assert.That(b.TryReceive(m => m[0] == 9, out _), Is.False);
                 Assert.That(b.PendingCount, Is.EqualTo(5));
                 Assert.That(b.PendingBytes, Is.EqualTo(5));
                 Assert.That(b.PeakPendingBytes, Is.EqualTo(6));
@@ -311,9 +328,26 @@ namespace Caelix.Tests
                 }
 
                 ref Sector dst = ref target.Get();
-                var reader = new NetMessageReader(buffer, written);
-                dst.ApplyReplicatedBrick(brickIdx, ref reader);
-                Assert.That(reader.Remaining, Is.EqualTo(0));
+                ApplyOneBrick(target, brickIdx, buffer, written);
+
+                // The record is exact: one byte short of the written brick is a truncated message.
+                SectorHandle scratch = SectorHandle.AllocEmpty();
+                try
+                {
+                    var shortPayload = new byte[4 + written - 1];
+                    shortPayload[0] = (byte)(brickIdx & 0xFF);
+                    shortPayload[1] = (byte)(brickIdx >> 8);
+                    Buffer.BlockCopy(buffer, 0, shortPayload, 4, written - 1);
+                    fixed (byte* shortPtr = shortPayload)
+                    {
+                        Assert.That(scratch.Get().ApplyReplicatedBrickBatch(shortPtr, shortPayload.Length, 1),
+                            Is.EqualTo(ReplicatedBrickBatchError.Truncated));
+                    }
+                }
+                finally
+                {
+                    scratch.Dispose(Allocator.Persistent);
+                }
 
                 Assert.That(dst.GetBlock(9, 10, 11), Is.EqualTo(new Block(0x8001)));
                 Assert.That(dst.GetBlock(15, 8, 8), Is.EqualTo(new Block(0x8002)));
@@ -355,8 +389,7 @@ namespace Caelix.Tests
                     written = writer.Length;
                 }
 
-                var reader = new NetMessageReader(buffer, written);
-                dst.ApplyReplicatedBrick(brickIdx, ref reader);
+                ApplyOneBrick(target, brickIdx, buffer, written);
                 dst.ClearAllDirtyFlags();
 
                 src.SetBlock(1, 1, 1, Block.Empty);
@@ -368,8 +401,7 @@ namespace Caelix.Tests
                     written = writer.Length;
                 }
 
-                reader = new NetMessageReader(buffer, written);
-                dst.ApplyReplicatedBrick(brickIdx, ref reader);
+                ApplyOneBrick(target, brickIdx, buffer, written);
 
                 Assert.That(dst.GetBlock(1, 1, 1).isEmpty, Is.True);
                 Assert.That(dst.GetBlock(2, 2, 2), Is.EqualTo(new Block(0x8003)));

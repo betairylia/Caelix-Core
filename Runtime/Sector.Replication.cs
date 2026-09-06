@@ -1,4 +1,3 @@
-using System.IO;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -106,58 +105,14 @@ namespace Caelix
         }
 
         /// <summary>
-        /// Applies one brick written by <see cref="WriteReplicatedBrick"/>. Allocates the brick and
-        /// any missing slot storage, copies the raw bytes, marks the brick dirty with
+        /// Validates and applies the trailing payload of one BrickData message without managed
+        /// reads or exceptions. The only apply path: it allocates each brick and any missing slot
+        /// storage, copies the raw bytes, marks the brick dirty with
         /// <see cref="ReplicationApplyFlags"/> (plus <see cref="DirtyFlags.BlockBrickAdded"/> for a
         /// brick this sector did not have yet), and widens the block AABB to the brick bounds.
-        /// Requires exclusive access to this sector, as does the native batch decoder.
-        /// </summary>
-        public void ApplyReplicatedBrick(int brickIdx, ref NetMessageReader reader)
-        {
-            int count = reader.Read<byte>();
-            if (count == 0)
-            {
-                return;
-            }
-
-            int3 brickPos = ToBrickPos((short)brickIdx);
-            short bid = brickMap.indices[brickIdx];
-            bool isNew = bid == BRICKID_EMPTY;
-            if (isNew)
-            {
-                bid = AllocateBrick(ref brickMap, slots, brickIdx, brickPos);
-            }
-
-            for (int rec = 0; rec < count; rec++)
-            {
-                int slotId = reader.Read<byte>();
-                int stride = reader.Read<ushort>();
-                int bytes = stride * BLOCKS_IN_BRICK;
-
-                if (slotId >= MAX_SLOTS || stride <= 0)
-                {
-                    throw new InvalidDataException($"Invalid replicated slot record: id {slotId}, stride {stride}.");
-                }
-
-                SectorSlotStorage* slot = EnsureSlotStorage(
-                    slots, slotId, stride, brickMap.Capacity, _allocator, 0);
-                reader.ReadBytes(slot->GetBrickPtr(bid), bytes);
-            }
-
-            DirtyFlags flags = ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None);
-            MarkBrickDirty(brickIdx, flags, 0xFFFFFFFF);
-
-            // Widened to the whole brick: blockAABB is a grow-only upper bound (see its field doc).
-            int3 origin = brickPos * SIZE_IN_BLOCKS;
-            blockAABB.Update(origin);
-            blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
-        }
-
-        /// <summary>
-        /// Validates and applies the trailing payload of one BrickData message without managed
-        /// reads or exceptions. The caller owns the input memory and exclusive access to this
-        /// sector until the call finishes. Different sectors may be applied in parallel; messages
-        /// for the same sector must remain in receive order. Invalid messages change no bricks.
+        /// The caller owns the input memory and exclusive access to this sector until the call
+        /// finishes. Different sectors may be applied in parallel; messages for the same sector
+        /// must remain in receive order. Invalid messages change no bricks.
         /// Refresh <see cref="UpdateNonEmptyBricks"/> after the last batch that allocates bricks.
         /// </summary>
         public ReplicatedBrickBatchError ApplyReplicatedBrickBatch(byte* payload, int length, int brickCount)

@@ -202,7 +202,9 @@ namespace Caelix
         }
 
         /// <summary>
-        /// Removes and disposes a sector at the specified position.
+        /// Removes and disposes a sector at the specified position. Marks the facing bricks of every
+        /// surviving neighbour sector dirty first, because they culled boundary geometry and physics
+        /// info against the storage that is about to go away.
         /// </summary>
         /// <param name="pos">The sector position to remove.</param>
         /// <returns>True if the sector was found and removed, false otherwise.</returns>
@@ -212,6 +214,8 @@ namespace Caelix
             {
                 return false;
             }
+
+            MarkSurvivingBoundaryDirty(pos);
 
             // Update neighbors
             for (int d = 0; d < NeighborhoodSettings.Directions.Length; d++)
@@ -228,6 +232,39 @@ namespace Caelix
             sectors.Remove(pos);
             sectorNeighbors.Remove(pos);
             return true;
+        }
+
+        /// <summary>
+        /// The surviving neighbours of a removed sector culled boundary geometry and physics info
+        /// against it. Marks the bricks of every surviving sector within one sector step that face
+        /// <paramref name="removedPos"/> dirty with <see cref="DirtyFlags.GeometryWithLocalNeighbor"/>.
+        /// The direction mask is zero, so the flag reaches only those bricks through propagation and
+        /// never creates a sector. On the server the next tick's propagation turns it into the
+        /// require-update the physics slot refresh reads; on the client <c>PrepareRender</c> does the
+        /// same for the renderers.
+        /// </summary>
+        private void MarkSurvivingBoundaryDirty(int3 removedPos)
+        {
+            for (int dz = -1; dz <= 1; dz++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                var delta = new int3(dx, dy, dz);
+                if (math.all(delta == 0)) continue;
+                if (!sectors.TryGetValue(removedPos - delta, out SectorHandle handle) || handle.IsNull) continue;
+
+                // delta points from the neighbour to the removed sector. A brick faces it when it lies on
+                // the matching boundary layer of every axis where delta is non-zero.
+                int3 boundary = math.select(int3.zero, new int3(Sector.SIZE_IN_BRICKS - 1), delta > 0);
+                bool3 axis = delta != 0;
+                ref Sector sector = ref handle.Get();
+                foreach (SectorNonEmptyBrickEnumerator.BrickRef brick in sector.EnumerateNonEmptyBricks())
+                {
+                    int3 brickPos = Sector.ToBrickPos((short)brick.BrickAbs);
+                    if (math.any(axis & (brickPos != boundary))) continue;
+                    sector.MarkBrickDirty(brick.BrickAbs, DirtyFlags.GeometryWithLocalNeighbor, 0);
+                }
+            }
         }
 
         /// <summary>

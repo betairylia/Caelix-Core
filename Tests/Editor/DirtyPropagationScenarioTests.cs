@@ -110,6 +110,28 @@ namespace Caelix.Tests
         }
 
         [Test]
+        public void RemovingSectorMarksOnlySurvivingFacingBricksForUpdate()
+        {
+            using var world = new DirtyPropagationTestWorld();
+            world.AddSector(new int3(1, 0, 0));
+            world.SetBlock(127, 64, 64); // sector (0,0,0), brick (15,8,8): faces the sector at +X
+            world.SetBlock(64, 64, 64);  // sector (0,0,0), brick (8,8,8): interior
+            // The helper writes into the center sector, so the removed sector is filled directly.
+            world.SectorAt(new int3(1, 0, 0)).SetBlock(64, 64, 64, new Block(1));
+            world.Propagate(DirtyFlags.All);
+            world.Data.ClearDirtyFlags();
+            world.Data.ClearRequireUpdates();
+
+            world.Data.RemoveSectorAt(new int3(1, 0, 0));
+            world.Propagate(DirtyFlags.GeometryWithLocalNeighbor);
+
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(15, 8, 8)) & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(8, 8, 8)) & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.EqualTo(0));
+            Assert.That(world.Data.sectors.ContainsKey(new int3(1, 0, 0)), Is.False);
+            Assert.That(world.Data.sectors.Count, Is.EqualTo(1), "removal must not create sectors");
+        }
+
+        [Test]
         public void MissingNeighborWithoutBoundaryCreationDoesNotCrash()
         {
             using var world = new DirtyPropagationTestWorld();

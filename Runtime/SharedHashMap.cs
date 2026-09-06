@@ -15,6 +15,9 @@ namespace Caelix
     /// at freed memory. <see cref="VoxelEntityData"/> is copied freely (world store, views,
     /// jobs), so its maps must alias. The pointer indirection here is what makes that safe.
     /// Mark job fields <c>[ReadOnly]</c> to document that a job must not mutate the map.
+    /// A default instance is not created; every mutating or enumerating member throws under
+    /// collections checks. Dispose through one copy leaves every other copy pointing at freed
+    /// memory, so only the owner disposes.
     /// </remarks>
     public unsafe struct SharedHashMap<TKey, TValue> : IDisposable
         where TKey : unmanaged, IEquatable<TKey>
@@ -37,32 +40,54 @@ namespace Caelix
         public bool IsCreated => map != null && map->IsCreated;
         public int Count => map != null ? map->Count : 0;
 
+        /// <summary>
+        /// Guards the members that dereference the map. Compiled out without collections checks, so
+        /// it costs nothing in a release build; the message is a constant, so Burst accepts it.
+        /// </summary>
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private void CheckCreated()
+        {
+            if (map == null)
+            {
+                throw new InvalidOperationException("SharedHashMap is not created. Construct it or check IsCreated first.");
+            }
+        }
+
         public TValue this[TKey key]
         {
-            get => (*map)[key];
+            get
+            {
+                CheckCreated();
+                return (*map)[key];
+            }
             set
             {
+                CheckCreated();
                 (*map)[key] = value;
             }
         }
 
         public void Add(TKey key, TValue value)
         {
+            CheckCreated();
             map->Add(key, value);
         }
 
         public bool TryAdd(TKey key, TValue value)
         {
+            CheckCreated();
             return map->TryAdd(key, value);
         }
 
         public bool Remove(TKey key)
         {
+            CheckCreated();
             return map->Remove(key);
         }
 
         public void Clear()
         {
+            CheckCreated();
             map->Clear();
         }
 
@@ -84,11 +109,13 @@ namespace Caelix
 
         public NativeArray<TKey> GetKeyArray(AllocatorManager.AllocatorHandle allocator)
         {
+            CheckCreated();
             return map->GetKeyArray(allocator);
         }
 
         public NativeHashMap<TKey, TValue> ToNativeHashMap(AllocatorManager.AllocatorHandle allocator)
         {
+            CheckCreated();
             var nativeMap = new NativeHashMap<TKey, TValue>(Count > 0 ? Count : 1, allocator);
             foreach (var kvp in *map)
             {
@@ -104,6 +131,7 @@ namespace Caelix
         /// </summary>
         public UnsafeHashMap<TKey, TValue>.Enumerator GetEnumerator()
         {
+            CheckCreated();
             return map->GetEnumerator();
         }
 
