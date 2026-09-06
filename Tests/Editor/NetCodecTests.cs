@@ -107,9 +107,9 @@ namespace Caelix.Tests
             using (b)
             {
                 for (byte i = 0; i < 6; i++) a.Send(NetDelivery.Reliable, new byte[] { i });
-                Assert.That(b.TryReceive(m => m[0] == 3, out byte[] query), Is.True);
+                Assert.That(b.TryReceive_RotateQueue(m => m[0] == 3, out byte[] query), Is.True);
                 Assert.That(query[0], Is.EqualTo(3));
-                Assert.That(b.TryReceive(m => m[0] == 9, out _), Is.False);
+                Assert.That(b.TryReceive_RotateQueue(m => m[0] == 9, out _), Is.False);
                 Assert.That(b.PendingCount, Is.EqualTo(5));
                 Assert.That(b.PendingBytes, Is.EqualTo(5));
                 Assert.That(b.PeakPendingBytes, Is.EqualTo(6));

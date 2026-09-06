@@ -34,7 +34,7 @@ namespace Caelix.Net
         /// in their original order. The predicate must not mutate the message or the channel.
         /// Used to service queries while paused without consuming pending commands.
         /// </summary>
-        bool TryReceive(Predicate<byte[]> predicate, out byte[] message);
+        bool TryReceive_RotateQueue(Predicate<byte[]> predicate, out byte[] message);
 
         /// <summary>Number of messages waiting in the inbox.</summary>
         int PendingCount { get; }

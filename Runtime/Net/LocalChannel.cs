@@ -64,7 +64,15 @@ namespace Caelix.Net
             return false;
         }
 
-        public bool TryReceive(Predicate<byte[]> predicate, out byte[] message)
+        /// <summary>
+        /// Scan through the whole inbox and return the first message with predicate(message) == true.
+        /// This method will do a full scan over the inbox no matter what.
+        /// </summary>
+        /// <param name="predicate"></param>
+        /// <param name="message"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
+        public bool TryReceive_RotateQueue(Predicate<byte[]> predicate, out byte[] message)
         {
             if (predicate == null) throw new ArgumentNullException(nameof(predicate));
             message = null;

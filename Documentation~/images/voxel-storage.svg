@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="610" viewBox="0 0 1000 610" role="img" aria-labelledby="title desc">
+<title id="title">Sparse storage: coordinates select dense brick data</title><desc id="desc">An entity maps sector coordinates to a sector. The sector brick table maps absolute coordinate indices to compact brick IDs. All created slots share those IDs. Empty coordinates have no brick payload; an allocated brick may contain empty Blocks.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#60768a"/></marker></defs>
+<rect width="1000" height="610" rx="16" fill="#f5f8fc"/>
+<g font-family="Segoe UI, Arial, sans-serif" fill="#172d43">
+<text x="36" y="43" font-size="25" font-weight="bold" fill="#172d43">Sparse storage: coordinates select dense brick data</text>
+<text x="36" y="75" font-size="16" font-weight="normal" fill="#172d43">Example indices are illustrative. Allocation and Block occupancy are separate facts.</text>
+<rect x="36" y="104" width="270" height="104" rx="10" fill="#ffffff" stroke="#c3d2df"/>
+<rect x="36" y="104" width="5" height="104" rx="2" fill="#176baf" stroke="#176baf"/>
+<text x="54" y="134" font-size="19" font-weight="bold" fill="#176baf">1  Entity sector map</text>
+<text x="54" y="162" font-size="16" font-weight="normal" fill="#172d43">Sector coordinate → handle</text>
+<text x="54" y="185" font-size="16" font-weight="normal" fill="#172d43">Only present sectors have entries</text>
+<rect x="365" y="104" width="270" height="104" rx="10" fill="#ffffff" stroke="#c3d2df"/>
+<rect x="365" y="104" width="5" height="104" rx="2" fill="#176baf" stroke="#176baf"/>
+<text x="383" y="134" font-size="19" font-weight="bold" fill="#176baf">2  Sector brick table</text>
+<text x="383" y="162" font-size="16" font-weight="normal" fill="#172d43">16 × 16 × 16 coordinates</text>
+<text x="383" y="185" font-size="16" font-weight="normal" fill="#172d43">128 blocks along each axis</text>
+<rect x="694" y="104" width="270" height="104" rx="10" fill="#ffffff" stroke="#c3d2df"/>
+<rect x="694" y="104" width="5" height="104" rx="2" fill="#176baf" stroke="#176baf"/>
+<text x="712" y="134" font-size="19" font-weight="bold" fill="#176baf">3  Shared slot storage</text>
+<text x="712" y="162" font-size="16" font-weight="normal" fill="#172d43">Compact ID → brick payload</text>
+<text x="712" y="185" font-size="16" font-weight="normal" fill="#172d43">8 × 8 × 8 values per slot</text>
+<path d="M 306 155 H 355" fill="none" stroke="#60768a" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 635 155 H 684" fill="none" stroke="#60768a" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="36" y="253" font-size="18" font-weight="bold" fill="#172d43">Absolute index</text>
+<text x="206" y="253" font-size="18" font-weight="bold" fill="#172d43">brickMap entry</text>
+<rect x="36" y="269" width="298" height="43" rx="10" fill="#e5f2fc" stroke="#c3d2df"/>
+<text x="51" y="297" font-size="17" font-weight="normal" fill="#172d43">0</text>
+<text x="206" y="297" font-size="17" font-weight="bold" fill="#172d43">EMPTY</text>
+<rect x="36" y="322" width="298" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="51" y="350" font-size="17" font-weight="normal" fill="#172d43">18</text>
+<text x="206" y="350" font-size="17" font-weight="bold" fill="#087f75">ID 0</text>
+<rect x="36" y="375" width="298" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="51" y="403" font-size="17" font-weight="normal" fill="#172d43">2050</text>
+<text x="206" y="403" font-size="17" font-weight="bold" fill="#087f75">ID 1</text>
+<text x="396" y="253" font-size="18" font-weight="bold" fill="#172d43">Block slot</text>
+<text x="595" y="253" font-size="18" font-weight="bold" fill="#172d43">Meta / other slot</text>
+<text x="795" y="253" font-size="18" font-weight="bold" fill="#172d43">Optional aux</text>
+<rect x="386" y="322" width="180" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="400" y="350" font-size="16" font-weight="normal" fill="#172d43">ID 0 · 512 values</text>
+<rect x="586" y="322" width="180" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="600" y="350" font-size="16" font-weight="normal" fill="#172d43">ID 0 · 512 values</text>
+<rect x="786" y="322" width="178" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="800" y="350" font-size="16" font-weight="normal" fill="#172d43">ID 0 · bitmap</text>
+<rect x="386" y="375" width="180" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="400" y="403" font-size="16" font-weight="normal" fill="#172d43">ID 1 · 512 values</text>
+<rect x="586" y="375" width="180" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="600" y="403" font-size="16" font-weight="normal" fill="#172d43">ID 1 · 512 values</text>
+<rect x="786" y="375" width="178" height="43" rx="10" fill="#e4f4ef" stroke="#c3d2df"/>
+<text x="800" y="403" font-size="16" font-weight="normal" fill="#172d43">ID 1 · bitmap</text>
+<path d="M 334 343 H 376" fill="none" stroke="#60768a" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 334 396 H 376" fill="none" stroke="#60768a" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="386" y="297" font-size="16" font-weight="normal" fill="#176baf">EMPTY has no allocated brick payload.</text>
+<rect x="36" y="465" width="448" height="105" rx="10" fill="#ffffff" stroke="#c3d2df"/>
+<rect x="36" y="465" width="5" height="105" rx="2" fill="#087f75" stroke="#087f75"/>
+<text x="54" y="495" font-size="19" font-weight="bold" fill="#087f75">Choose allocation traversal</text>
+<text x="54" y="523" font-size="16" font-weight="normal" fill="#172d43">EnumerateNonEmptyBricks() visits IDs 0 and 1,</text>
+<text x="54" y="546" font-size="16" font-weight="normal" fill="#172d43">even if all their Block values have been cleared.</text>
+<rect x="516" y="465" width="448" height="105" rx="10" fill="#ffffff" stroke="#c3d2df"/>
+<rect x="516" y="465" width="5" height="105" rx="2" fill="#ac580a" stroke="#ac580a"/>
+<text x="534" y="495" font-size="19" font-weight="bold" fill="#ac580a">Choose occupancy traversal</text>
+<text x="534" y="523" font-size="16" font-weight="normal" fill="#172d43">EnumerateNonEmptyBlocks() selects Block values</text>
+<text x="534" y="546" font-size="16" font-weight="normal" fill="#172d43">using the refreshed occupancy bitmap.</text>
+</g></svg>
