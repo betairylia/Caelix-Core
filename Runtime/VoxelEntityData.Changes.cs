@@ -70,6 +70,13 @@ namespace Caelix
         public int ChangeCount => changeLog != null ? changeLog->Entries.Length : 0;
 
         /// <summary>
+        /// Identity of the store behind this struct: every copy of one entity shares one change
+        /// log, so two copies are the same entity exactly when this matches. Zero for a
+        /// <c>default</c> instance, which has no store at all.
+        /// </summary>
+        internal System.IntPtr ChangeLogIdentity => (System.IntPtr)changeLog;
+
+        /// <summary>
         /// Read-only view of the change list. Valid until the next <see cref="BuildChangeList"/>,
         /// <see cref="ClearChanges"/>, <see cref="RemoveSectorAt"/> or <see cref="Dispose"/>.
         /// </summary>

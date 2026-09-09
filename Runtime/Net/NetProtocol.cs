@@ -18,9 +18,8 @@ namespace Caelix.Net
         EntityDespawn = 3,
         EntityState = 4,
         EntityTransform = 5,
-        SectorAdd = 6,
-        SectorRemove = 7,
-        BrickData = 8,
+        /// <summary>One entity's brick records. See <see cref="BrickBatchHeader"/>.</summary>
+        BrickBatch = 8,
         Event = 9,
         QueryReply = 10,
         TypedQueryReply = 11,
@@ -148,22 +147,21 @@ namespace Caelix.Net
         public RigidTransform Transform;
     }
 
-    public struct SectorMessage
-    {
-        public Guid128 Guid;
-        public int3 SectorPos;
-    }
-
     /// <summary>
-    /// One sector's changed bricks. Followed by <see cref="BrickCount"/> records of
-    /// <c>u16 brickIdx, u16 dirtyFlags</c> then the brick's slot records as written by
-    /// <see cref="Sector.WriteReplicatedBrick"/>.
+    /// One entity's brick records. Followed by <see cref="BrickCount"/> records as written by
+    /// <see cref="VoxelEntityData.WriteReplicatedRecord"/>: <c>int3 key, u8 op</c>, then for
+    /// <see cref="BrickOp.Update"/> the slot records <c>u8 slotCount, repeated (u8 slotId,
+    /// u16 stride, byte[stride * BrickKey.BlocksInBrick])</c>. A Remove record ends after the op
+    /// byte.
     /// </summary>
+    /// <remarks>
+    /// <see cref="BrickCount"/> is an <c>int</c>: a batch is bounded by bytes, not by 65535
+    /// records, and a Remove record is only 13 bytes.
+    /// </remarks>
     public struct BrickBatchHeader
     {
         public Guid128 Guid;
-        public int3 SectorPos;
-        public ushort BrickCount;
+        public int BrickCount;
     }
 
     /// <summary>Followed by <c>SizeOf(TypeId)</c> payload bytes.</summary>

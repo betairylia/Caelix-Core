@@ -292,6 +292,41 @@ namespace Caelix.Tests
             Assert.That(scope.Data.ChangeCount, Is.EqualTo(0));
         }
 
+        [Test]
+        public void AddSectorAt_MarksAttachedBricksAdded()
+        {
+            using var scope = new EntityDataTestScope();
+            SectorHandle attached = SectorHandle.AllocEmpty();
+            bool owned = true;
+            try
+            {
+                attached.SetBlock(1, 1, 1, Solid());       // key (0,0,0)
+                attached.SetBlock(70, 1, 1, Solid());      // key (8,0,0)
+                attached.Get().ClearAllDirtyFlags();
+
+                scope.Data.AddSectorAt(new int3(0, 0, 0), attached);
+                owned = false;
+
+                // Replication derives its delta from the change list, so a pre-filled sector that a
+                // generator or importer attaches must announce every brick it brought.
+                scope.Data.BuildChangeList();
+                foreach (int3 key in new[] { new int3(0, 0, 0), new int3(8, 0, 0) })
+                {
+                    BrickChange change = SingleChange(scope.Data, key);
+                    Assert.That(change.Kind, Is.EqualTo(ChangeKind.Updated));
+                    Assert.That(
+                        change.SourceFlags & (DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry |
+                                              DirtyFlags.GeometryWithLocalNeighbor),
+                        Is.EqualTo(DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry |
+                                   DirtyFlags.GeometryWithLocalNeighbor));
+                }
+            }
+            finally
+            {
+                if (owned) attached.Dispose(Allocator.Persistent);
+            }
+        }
+
         // ---- 7. Two edit rounds, one build ---------------------------------------------------
 
         [Test]

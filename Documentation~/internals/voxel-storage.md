@@ -115,14 +115,15 @@ neighbour sector dirty with `GeometryWithLocalNeighbor` and an empty direction
 mask, so consumers that culled boundary data against the removed storage are
 rescheduled by the next propagation and no sector is created.
 
-`Sector.ApplyReplicatedBrickBatch` accepts an unmanaged message payload and is
-compatible with Burst jobs. Its caller must keep the payload alive and grant
-exclusive access to the sector until it returns. Different sectors can run in
-parallel; writes within a sector, including allocation and dirty flags, remain
-serial. The decoder validates the whole message before modifying bricks and returns
-an error code for malformed records. It preserves slot strides, render dirty flags,
-and grow-only brick bounds. After a sequence that allocates bricks, refresh
-`NonEmptyBricks` before exposing the sector to consumers.
+`BrickBatchApplier` (`Runtime/Net/`) accepts unmanaged message payloads keyed by
+brick and is the only apply path for replication. Its caller must keep each payload
+alive until `Flush` returns. The applier validates every message before it changes
+any brick, groups the records by the storage unit that owns them, applies different
+units in parallel while keeping the wire order inside one unit, publishes a
+`Removed` change entry per freed brick, frees a unit that ended up empty, and
+refreshes `NonEmptyBricks` wherever allocation changed. It preserves slot strides,
+render dirty flags and grow-only brick bounds. A malformed message changes no brick,
+creates no storage, and reports an error code for the main thread.
 
 During an active sector snapshot, normal reads use the live data and writes go
 to the snapshot buffers. After scheduled work completes, applying the snapshot

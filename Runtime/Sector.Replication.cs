@@ -1,20 +1,9 @@
-using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using Caelix.Net;
 
 namespace Caelix
 {
-    /// <summary>Validation result returned to the main thread by the Burst replication decoder.</summary>
-    public enum ReplicatedBrickBatchError : byte
-    {
-        None,
-        Truncated,
-        InvalidBrickIndex,
-        InvalidSlot,
-        SlotStrideMismatch,
-    }
-
     /// <summary>
     /// Brick-level replication codec. The server packs the replicated slots of one brick; the
     /// client applies them raw. Records carry slot id and stride, so the receiving side never
@@ -23,29 +12,13 @@ namespace Caelix
     ///   u8  slotCount
     ///   repeated: u8 slotId, u16 stride, byte[Sector.BLOCKS_IN_BRICK * stride]
     /// </code>
+    /// The keyed record that wraps this (key, op, then these bytes) is written by
+    /// <see cref="VoxelEntityData.WriteReplicatedRecord"/> and applied by
+    /// <see cref="BrickBatchApplier"/>; the members here are the per-brick primitives those two
+    /// use, and are internal because nothing outside Caelix-Core names a sector.
     /// </summary>
     public unsafe partial struct Sector
     {
-        /// <summary>
-        /// Dirty bits that mean "the Block slot of this brick changed this tick". The Block slot is
-        /// the only writer that sets <see cref="DirtyFlags.Geometry"/>.
-        /// </summary>
-        public const DirtyFlags ReplicationDirtyMask =
-            DirtyFlags.Geometry | DirtyFlags.BlockBrickAdded | DirtyFlags.BlockBrickRemoved;
-
-        /// <summary>
-        /// Dirty bits the client marks on an applied brick so its renderer refreshes. These bits
-        /// cannot allocate sectors during propagation (see <see cref="DirtyPropagationSettings"/>).
-        /// </summary>
-        public const DirtyFlags ReplicationApplyFlags =
-            DirtyFlags.Geometry | DirtyFlags.GeometryWithLocalNeighbor;
-
-        /// <summary>Slot mask bit for a slot id.</summary>
-        public static ushort SlotBit(SectorSlotId slotId) => (ushort)(1 << (int)slotId);
-
-        /// <summary>The default replicated slot mask: Block only.</summary>
-        public const ushort DefaultReplicatedSlotMask = 1 << (int)SectorSlotId.Block;
-
         /// <summary>
         /// Exact number of bytes <see cref="WriteReplicatedBrick"/> emits for one ALLOCATED brick
         /// under <paramref name="slotMask"/>: the slot-count byte plus, per masked slot that exists
@@ -53,11 +26,10 @@ namespace Caelix
         /// </summary>
         /// <remarks>
         /// The value is a property of the SECTOR, not of a brick: it depends only on which slots
-        /// exist and how wide they are, and every allocated brick writes exactly this much. So a
-        /// caller sizing a buffer for a batch computes it once and multiplies by the brick count. An
+        /// exist and how wide they are, and every allocated brick writes exactly this much. An
         /// unallocated brick writes one byte instead (the zero count), which this bound covers.
         /// </remarks>
-        public int ReplicatedBrickBytes(ushort slotMask)
+        internal int ReplicatedBrickBytes(ushort slotMask)
         {
             int bytes = 1; // u8 slotCount
             for (int i = 0; i < MAX_SLOTS; i++)
@@ -78,7 +50,7 @@ namespace Caelix
         /// zero count for an unallocated brick. The writer must already have
         /// <see cref="ReplicatedBrickBytes"/> bytes of room left.
         /// </summary>
-        public void WriteReplicatedBrick(ref UnsafeNetWriter writer, int brickIdx, ushort slotMask)
+        internal void WriteReplicatedBrick(ref UnsafeNetWriter writer, int brickIdx, ushort slotMask)
         {
             short bid = brickMap.indices[brickIdx];
             if (bid == BRICKID_EMPTY)
@@ -105,90 +77,76 @@ namespace Caelix
         }
 
         /// <summary>
-        /// Validates and applies the trailing payload of one BrickData message without managed
-        /// reads or exceptions. The only apply path: it allocates each brick and any missing slot
-        /// storage, copies the raw bytes, marks the brick dirty with
-        /// <see cref="ReplicationApplyFlags"/> (plus <see cref="DirtyFlags.BlockBrickAdded"/> for a
-        /// brick this sector did not have yet), and widens the block AABB to the brick bounds.
-        /// The caller owns the input memory and exclusive access to this sector until the call
-        /// finishes. Different sectors may be applied in parallel; messages for the same sector
-        /// must remain in receive order. Invalid messages change no bricks.
-        /// Refresh <see cref="UpdateNonEmptyBricks"/> after the last batch that allocates bricks.
+        /// Applies one VALIDATED Update record's slot records to the brick at
+        /// <paramref name="brickIdx"/>: allocates the brick and any missing slot storage, copies
+        /// the raw bytes, marks the brick dirty with
+        /// <see cref="BrickReplication.ReplicationApplyFlags"/> (plus
+        /// <see cref="DirtyFlags.BlockBrickAdded"/> for a brick this sector did not have yet), and
+        /// widens the block AABB to the brick bounds.
         /// </summary>
-        public ReplicatedBrickBatchError ApplyReplicatedBrickBatch(byte* payload, int length, int brickCount)
+        /// <param name="brickIdx">Absolute brick index inside this sector.</param>
+        /// <param name="slotRecords">First slot record; the caller has already read the count byte.</param>
+        /// <param name="slotCount">Number of slot records, at least one.</param>
+        /// <returns>True when the brick was allocated by this call.</returns>
+        /// <remarks>
+        /// Bounds, slot ids and strides are the applier's job: this primitive trusts its input.
+        /// The caller owns the input memory and exclusive access to this sector until the call
+        /// finishes. Different sectors may be applied in parallel; records for the same sector
+        /// must stay in receive order. Refresh <see cref="UpdateNonEmptyBricks"/> after the last
+        /// call that changed allocation.
+        /// </remarks>
+        internal bool ApplyReplicatedBrick(int brickIdx, byte* slotRecords, int slotCount)
         {
-            if (length < 0 || brickCount < 0 || brickCount > length / 5)
-                return ReplicatedBrickBatchError.Truncated;
-
-            // Validate the whole message before mutating storage. Track newly declared strides as
-            // well as existing ones: conflicting records in the same message are invalid too.
-            int* strides = stackalloc int[MAX_SLOTS];
-            for (int i = 0; i < MAX_SLOTS; i++)
-                strides[i] = slots[i].IsCreated ? slots[i].stride : 0;
+            int3 brickPos = ToBrickPos((short)brickIdx);
+            short bid = brickMap.indices[brickIdx];
+            bool isNew = bid == BRICKID_EMPTY;
+            if (isNew)
+            {
+                bid = AllocateBrick(ref brickMap, slots, brickIdx, brickPos);
+            }
 
             int offset = 0;
-            for (int i = 0; i < brickCount; i++)
+            for (int s = 0; s < slotCount; s++)
             {
-                if (length - offset < 5) return ReplicatedBrickBatchError.Truncated;
-                int brickIdx = ReadReplicatedUShort(payload + offset);
-                int count = payload[offset + 4];
-                offset += 5; // brick index, informational server flags, slot count
-                if (brickIdx >= BRICKS_IN_SECTOR) return ReplicatedBrickBatchError.InvalidBrickIndex;
-                for (int s = 0; s < count; s++)
-                {
-                    if (length - offset < 3) return ReplicatedBrickBatchError.Truncated;
-                    int slotId = payload[offset];
-                    int stride = ReadReplicatedUShort(payload + offset + 1);
-                    offset += 3;
-                    if (slotId >= MAX_SLOTS || stride == 0) return ReplicatedBrickBatchError.InvalidSlot;
-                    if (strides[slotId] != 0 && strides[slotId] != stride)
-                        return ReplicatedBrickBatchError.SlotStrideMismatch;
-                    strides[slotId] = stride;
-                    int bytes = stride * BLOCKS_IN_BRICK;
-                    if (length - offset < bytes) return ReplicatedBrickBatchError.Truncated;
-                    offset += bytes;
-                }
+                int slotId = slotRecords[offset];
+                int stride = BrickReplication.ReadUnaligned<ushort>(slotRecords + offset + 1);
+                offset += BrickReplication.SlotRecordHeaderBytes;
+
+                SectorSlotStorage* slot = EnsureSlotStorage(
+                    slots, slotId, stride, brickMap.Capacity, _allocator, 0);
+                int bytes = stride * BLOCKS_IN_BRICK;
+                UnsafeUtility.MemCpy(slot->GetBrickPtr(bid), slotRecords + offset, bytes);
+                offset += bytes;
             }
 
-            offset = 0;
-            for (int i = 0; i < brickCount; i++)
-            {
-                int brickIdx = ReadReplicatedUShort(payload + offset);
-                int count = payload[offset + 4];
-                offset += 5;
-                if (count == 0) continue; // zero slots is a no-op, not a brick removal
+            MarkBrickDirty(
+                brickIdx,
+                BrickReplication.ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None),
+                0xFFFFFFFF);
 
-                int3 brickPos = ToBrickPos((short)brickIdx);
-                short bid = brickMap.indices[brickIdx];
-                bool isNew = bid == BRICKID_EMPTY;
-                if (isNew) bid = AllocateBrick(ref brickMap, slots, brickIdx, brickPos);
-
-                for (int s = 0; s < count; s++)
-                {
-                    int slotId = payload[offset];
-                    int stride = ReadReplicatedUShort(payload + offset + 1);
-                    offset += 3;
-                    SectorSlotStorage* slot = EnsureSlotStorage(
-                        slots, slotId, stride, brickMap.Capacity, _allocator, 0);
-                    int bytes = stride * BLOCKS_IN_BRICK;
-                    UnsafeUtility.MemCpy(slot->GetBrickPtr(bid), payload + offset, bytes);
-                    offset += bytes;
-                }
-
-                MarkBrickDirty(brickIdx,
-                    ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None), 0xFFFFFFFF);
-                int3 origin = brickPos * SIZE_IN_BLOCKS;
-                blockAABB.Update(origin);
-                blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
-            }
-            return ReplicatedBrickBatchError.None;
+            int3 origin = brickPos * SIZE_IN_BLOCKS;
+            blockAABB.Update(origin);
+            blockAABB.Update(origin + new int3(SIZE_IN_BLOCKS - 1));
+            return isNew;
         }
 
-        private static ushort ReadReplicatedUShort(byte* source)
+        /// <summary>
+        /// Frees the brick at <paramref name="brickIdx"/>. Returns false when it was not allocated.
+        /// </summary>
+        /// <remarks>
+        /// The index keeps <see cref="BrickReplication.ReplicationRemoveFlags"/> dirty with every
+        /// direction set, so the next propagation re-renders the 26 neighbours: propagation reads
+        /// the flag arrays BY INDEX and never asks whether the brick still exists.
+        /// </remarks>
+        internal bool RemoveReplicatedBrick(int brickIdx)
         {
-            // Wire records need not be aligned. Match NetMessageReader's native-endian codec.
-            UnsafeUtility.CopyPtrToStructure(source, out ushort value);
-            return value;
+            if (brickMap.RemoveBrick(ToBrickPos((short)brickIdx)) == SparseBrickIdTable.EMPTY)
+            {
+                return false;
+            }
+
+            MarkBrickDirty(brickIdx, BrickReplication.ReplicationRemoveFlags, 0xFFFFFFFF);
+            return true;
         }
 
         /// <summary>

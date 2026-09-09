@@ -174,6 +174,15 @@ namespace Caelix
         /// <summary>
         /// Adds a sector handle at the specified position.
         /// </summary>
+        /// <remarks>
+        /// Every allocated brick of the attached sector is marked
+        /// <see cref="DirtyFlags.BlockBrickAdded"/>, <see cref="DirtyFlags.Geometry"/> and
+        /// <see cref="DirtyFlags.GeometryWithLocalNeighbor"/>. Replication derives its delta from
+        /// the change list now, so a sector attached with content already in it — a generator
+        /// (<c>InfiniteLoader</c>), an importer — must announce its bricks here: nothing else ever
+        /// marks them, and the server no longer diffs sector sets per connection. A loader that
+        /// already marks the same bits (<c>WorldLoader</c>) just marks them twice, which is free.
+        /// </remarks>
         public void AddSectorAt(int3 pos, SectorHandle sector)
         {
             // Entity topology is mutated on the main thread; jobs only use copies of the handles.
@@ -202,7 +211,29 @@ namespace Caelix
                 }
             }
 
+            MarkBrickAttachmentDirty(sector);
             MarkStorageMutated();
+        }
+
+        /// <summary>
+        /// Marks every allocated brick of a freshly attached sector as added geometry, so the
+        /// change list carries it. See the remarks on <see cref="AddSectorAt"/>.
+        /// </summary>
+        private static void MarkBrickAttachmentDirty(SectorHandle handle)
+        {
+            if (handle.IsNull)
+            {
+                return;
+            }
+
+            const DirtyFlags flags =
+                DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry | DirtyFlags.GeometryWithLocalNeighbor;
+
+            ref Sector sector = ref handle.Get();
+            foreach (SectorNonEmptyBrickEnumerator.BrickRef brick in sector.EnumerateNonEmptyBricks())
+            {
+                sector.MarkBrickDirty(brick.BrickAbs, flags, 0xFFFFFFFF);
+            }
         }
 
         /// <summary>

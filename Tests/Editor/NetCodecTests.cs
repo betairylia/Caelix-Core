@@ -1,9 +1,7 @@
 using System;
 using NUnit.Framework;
 using Unity.Collections;
-using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Jobs;
 using Unity.Mathematics;
 using Caelix.Net;
 using Caelix.Utils;
@@ -11,167 +9,518 @@ using Caelix.Utils;
 namespace Caelix.Tests
 {
     /// <summary>
-    /// Wire codec: message writer and reader, the in-process channel, and the brick-level
+    /// Wire codec: message writer and reader, the in-process channel, and the keyed brick
     /// replication codec that every server-to-client voxel update goes through.
     /// </summary>
     public unsafe class NetCodecTests
     {
-        [BurstCompile(CompileSynchronously = true)]
-        private struct ApplyBatchJob : IJob
+        private const ushort BlockOnly = BrickReplication.DefaultReplicatedSlotMask;
+        private const ushort AllSlots = 0xFFFF;
+
+        // ---- Helpers -----------------------------------------------------------------------
+
+        /// <summary>The exact bytes one keyed record of <paramref name="source"/> occupies on the wire.</summary>
+        private static byte[] Record(VoxelEntityData source, int3 key, BrickOp op, ushort slotMask)
         {
-            public SectorHandle Target;
-            [NativeDisableUnsafePtrRestriction] public byte* Payload;
-            public int Length, Count;
-            public NativeArray<ReplicatedBrickBatchError> Result;
-            public void Execute() => Result[0] = Target.Get().ApplyReplicatedBrickBatch(Payload, Length, Count);
+            var bytes = new byte[source.ReplicatedRecordBytes(key, op, slotMask)];
+            fixed (byte* ptr = bytes)
+            {
+                var writer = new UnsafeNetWriter(ptr, bytes.Length);
+                source.WriteReplicatedRecord(ref writer, key, op, slotMask);
+                Assert.That(writer.Length, Is.EqualTo(bytes.Length), "record size and record write disagree");
+            }
+
+            return bytes;
         }
 
-        /// <summary>
-        /// Applies one brick record through the batch decoder: a one-brick BrickData payload is
-        /// <c>u16 brickIdx, u16 dirtyFlags</c> followed by the bytes <see cref="Sector.WriteReplicatedBrick"/> wrote.
-        /// </summary>
-        private static void ApplyOneBrick(SectorHandle target, int brickIdx, byte[] brickBytes, int written)
+        /// <summary>Applies one message through a fresh applier and returns its validation result.</summary>
+        private static ReplicatedBrickBatchError ApplyBatch(
+            in VoxelEntityData data, byte[] payload, int length, int brickCount)
         {
-            var payload = new byte[4 + written];
-            payload[0] = (byte)(brickIdx & 0xFF);
-            payload[1] = (byte)(brickIdx >> 8);
-            // payload[2..3] = dirty flags 0 (informational)
-            Buffer.BlockCopy(brickBytes, 0, payload, 4, written);
+            using var applier = new BrickBatchApplier();
             fixed (byte* ptr = payload)
             {
-                ReplicatedBrickBatchError error = target.Get().ApplyReplicatedBrickBatch(ptr, payload.Length, 1);
-                Assert.That(error, Is.EqualTo(ReplicatedBrickBatchError.None));
+                applier.Add(in data, ptr, length, brickCount);
+                applier.Flush();
+                return applier.Errors[0];
+            }
+        }
+
+        private static ReplicatedBrickBatchError ApplyBatch(in VoxelEntityData data, byte[] payload, int brickCount)
+            => ApplyBatch(in data, payload, payload.Length, brickCount);
+
+        private static int BrickCount(VoxelEntityData data)
+        {
+            int count = 0;
+            foreach (int3 _ in data.EnumerateBricks()) count++;
+            return count;
+        }
+
+        private static ushort DirtyAt(VoxelEntityData data, int3 key)
+        {
+            SectorHandle handle = data.sectors[key >> Sector.SHIFT_IN_BRICKS];
+            int brickIdx = Sector.ToBrickIdx(
+                key.x & Sector.SECTOR_MASK, key.y & Sector.SECTOR_MASK, key.z & Sector.SECTOR_MASK);
+            return handle.Get().brickDirtyFlags[brickIdx];
+        }
+
+        private static ushort RequireAt(VoxelEntityData data, int3 key)
+        {
+            SectorHandle handle = data.sectors[key >> Sector.SHIFT_IN_BRICKS];
+            int brickIdx = Sector.ToBrickIdx(
+                key.x & Sector.SECTOR_MASK, key.y & Sector.SECTOR_MASK, key.z & Sector.SECTOR_MASK);
+            return handle.Get().brickRequireUpdateFlags[brickIdx];
+        }
+
+        // ---- Records -----------------------------------------------------------------------
+
+        [Test]
+        public void Record_RoundTripsBlockSlotOnly()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var target = new VoxelEntityData(Allocator.Persistent);
+            var scratch = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                source.SetBlock(new int3(9, 10, 11), new Block(0x8001));
+                source.SetBlock(new int3(15, 8, 8), new Block(0x8002));
+                // A second, non-replicated slot in the same brick.
+                source.SetSlot((SectorSlotId)2, new int3(9, 10, 11), (short)42);
+
+                var key = new int3(1, 1, 1);
+                byte[] record = Record(source, key, BrickOp.Update, BlockOnly);
+
+                Assert.That(ApplyBatch(in target, record, 1), Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(target.GetBlock(new int3(9, 10, 11)), Is.EqualTo(new Block(0x8001)));
+                Assert.That(target.GetBlock(new int3(15, 8, 8)), Is.EqualTo(new Block(0x8002)));
+                Assert.That(target.GetBlock(new int3(8, 8, 8)).isEmpty, Is.True);
+                Assert.That(BrickCount(target), Is.EqualTo(1));
+                Assert.That(target.sectors[int3.zero].Get().slots[2].IsCreated, Is.False,
+                    "non-replicated slot must not arrive");
+
+                ushort dirty = DirtyAt(target, key);
+                Assert.That(dirty & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)DirtyFlags.GeneralAutomata, Is.EqualTo(0),
+                    "replica must not trigger automata");
+
+                // The record is exact: one byte short of it is a truncated message that applies nothing.
+                Assert.That(ApplyBatch(in scratch, record, record.Length - 1, 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.Truncated));
+                Assert.That(scratch.sectors.Count, Is.Zero);
+            }
+            finally
+            {
+                source.Dispose();
+                target.Dispose();
+                scratch.Dispose();
             }
         }
 
         [Test]
-        public void NativeBrickBatch_MatchesPerBrickApplyWithMultipleSlotsAndRepeatedBricks()
+        public void Record_SecondApplyOverwritesWithoutBrickAdded()
         {
-            SectorHandle source = SectorHandle.AllocEmpty();
-            SectorHandle expected = SectorHandle.AllocEmpty();
-            SectorHandle actual = SectorHandle.AllocEmpty();
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var target = new VoxelEntityData(Allocator.Persistent);
             try
             {
-                var writer = new NetMessageWriter();
-                writer.Write((byte)99); // deliberately unaligned input
-                for (int b = 0; b < 40; b++)
-                {
-                    int index = b % 31;
-                    int3 p = Sector.ToBrickPos((short)index) * Sector.SIZE_IN_BLOCKS;
-                    source.Get().SetBlock(p.x, p.y, p.z, new Block((ushort)(0x8001 + b)));
-                    source.Get().SetVoxelSlot((SectorSlotId)2, p.x, p.y, p.z, b + 123);
-                    var bytes = new byte[source.Get().ReplicatedBrickBytes(0xffff)];
-                    fixed (byte* ptr = bytes)
-                    {
-                        var rawWriter = new UnsafeNetWriter(ptr, bytes.Length);
-                        source.Get().WriteReplicatedBrick(ref rawWriter, index, 0xffff);
-                        ApplyOneBrick(expected, index, bytes, rawWriter.Length);
-                        writer.Write((ushort)index);
-                        writer.Write((ushort)DirtyFlags.GeneralAutomata);
-                        writer.WriteBytes(bytes.AsSpan(0, rawWriter.Length));
-                    }
-                }
-                writer.Write((ushort)100);
-                writer.Write((ushort)0);
-                writer.Write((byte)0); // unallocated brick, no-op
-                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
-                fixed (byte* ptr = writer.Buffer)
-                    new ApplyBatchJob { Target = actual, Payload = ptr + 1, Length = writer.Length - 1,
-                        Count = 41, Result = result }.Schedule().Complete();
-                Assert.That(result[0], Is.EqualTo(ReplicatedBrickBatchError.None));
-                Assert.That(actual.Get().brickMap.Count, Is.EqualTo(expected.Get().brickMap.Count));
-                Assert.That(actual.Get().blockAABB, Is.EqualTo(expected.Get().blockAABB));
-                foreach (var brick in expected.Get().EnumerateNonEmptyBricks())
-                {
-                    int index = brick.BrickAbs;
-                    short aid = actual.Get().brickMap.indices[index];
-                    short eid = expected.Get().brickMap.indices[index];
-                    foreach (int slot in new[] { 0, 2 })
-                        Assert.That(UnsafeUtility.MemCmp(actual.Get().slots[slot].GetBrickPtr(aid),
-                            expected.Get().slots[slot].GetBrickPtr(eid), expected.Get().slots[slot].BytesPerBrick), Is.Zero);
-                    Assert.That(actual.Get().brickDirtyFlags[index], Is.EqualTo(expected.Get().brickDirtyFlags[index]));
-                }
+                var key = int3.zero;
+                source.SetBlock(new int3(1, 1, 1), new Block(0x8001));
+                Assert.That(ApplyBatch(in target, Record(source, key, BrickOp.Update, BlockOnly), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+                target.ClearDirtyFlags();
+
+                source.SetBlock(new int3(1, 1, 1), Block.Empty);
+                source.SetBlock(new int3(2, 2, 2), new Block(0x8003));
+                Assert.That(ApplyBatch(in target, Record(source, key, BrickOp.Update, BlockOnly), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+
+                Assert.That(target.GetBlock(new int3(1, 1, 1)).isEmpty, Is.True);
+                Assert.That(target.GetBlock(new int3(2, 2, 2)), Is.EqualTo(new Block(0x8003)));
+                Assert.That(DirtyAt(target, key) & (ushort)DirtyFlags.BlockBrickAdded, Is.EqualTo(0));
+                Assert.That(DirtyAt(target, key) & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
             }
             finally
             {
-                source.Dispose(Allocator.Persistent);
-                expected.Dispose(Allocator.Persistent);
-                actual.Dispose(Allocator.Persistent);
+                source.Dispose();
+                target.Dispose();
+            }
+        }
+
+        // ---- Batches -----------------------------------------------------------------------
+
+        [Test]
+        public void Batch_MatchesPerRecordApplyWithMultipleSlotsAndRepeatedKeys()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var expected = new VoxelEntityData(Allocator.Persistent);
+            var actual = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var batch = new NetMessageWriter();
+                batch.Write((byte)99); // deliberately unaligned input
+                int count = 0;
+
+                for (int b = 0; b < 40; b++)
+                {
+                    int i = b % 31;
+                    int3 key = new int3(i & 3, (i >> 2) & 3, 0) + ((b & 1) == 0 ? int3.zero : new int3(16, 0, 0));
+                    int3 block = BrickKey.ToBlockOrigin(key) + new int3(1, 2, 3);
+
+                    source.SetBlock(block, new Block((ushort)(0x8001 + b)));
+                    source.SetSlot((SectorSlotId)2, block, b + 123);
+
+                    byte[] record = Record(source, key, BrickOp.Update, AllSlots);
+                    Assert.That(ApplyBatch(in expected, record, 1), Is.EqualTo(ReplicatedBrickBatchError.None));
+                    batch.WriteBytes(record);
+                    count++;
+                }
+
+                // A trailing zero-slot Update: a no-op that must not change or free anything.
+                byte[] tail = Record(source, new int3(5, 5, 5), BrickOp.Update, AllSlots);
+                Assert.That(tail.Length, Is.EqualTo(BrickReplication.RecordHeaderBytes + 1));
+                Assert.That(ApplyBatch(in expected, tail, 1), Is.EqualTo(ReplicatedBrickBatchError.None));
+                batch.WriteBytes(tail);
+                count++;
+
+                byte[] payload = new byte[batch.Length - 1];
+                System.Buffer.BlockCopy(batch.Buffer, 1, payload, 0, payload.Length);
+                Assert.That(ApplyBatch(in actual, payload, count), Is.EqualTo(ReplicatedBrickBatchError.None));
+
+                AssertStorageEqual(expected, actual);
+            }
+            finally
+            {
+                source.Dispose();
+                expected.Dispose();
+                actual.Dispose();
             }
         }
 
         [TestCase(ReplicatedBrickBatchError.Truncated)]
-        [TestCase(ReplicatedBrickBatchError.InvalidBrickIndex)]
+        [TestCase(ReplicatedBrickBatchError.InvalidOp)]
         [TestCase(ReplicatedBrickBatchError.InvalidSlot)]
         [TestCase(ReplicatedBrickBatchError.SlotStrideMismatch)]
-        public void NativeBrickBatch_InvalidSecondRecordDoesNotApplyFirst(ReplicatedBrickBatchError error)
+        public void Batch_InvalidSecondRecordDoesNotApplyFirst(ReplicatedBrickBatchError error)
         {
-            SectorHandle target = SectorHandle.AllocEmpty();
+            var data = new VoxelEntityData(Allocator.Persistent);
             try
             {
                 var writer = new NetMessageWriter();
                 for (int b = 0; b < 2; b++)
                 {
-                    writer.Write((ushort)(b == 1 && error == ReplicatedBrickBatchError.InvalidBrickIndex ? 4096 : b));
-                    writer.Write((ushort)0);
+                    bool bad = b == 1;
+                    writer.Write(new int3(b, 0, 0));
+                    writer.Write((byte)(bad && error == ReplicatedBrickBatchError.InvalidOp ? 7 : 0));
                     writer.Write((byte)1);
-                    writer.Write((byte)(b == 1 && error == ReplicatedBrickBatchError.InvalidSlot ? 255 : 0));
-                    writer.Write((ushort)(b == 1 && error == ReplicatedBrickBatchError.SlotStrideMismatch ? 4 : 2));
-                    writer.WriteBytes(new byte[Sector.BLOCKS_IN_BRICK * 2]);
+                    writer.Write((byte)(bad && error == ReplicatedBrickBatchError.InvalidSlot ? 255 : 0));
+                    int stride = bad && error == ReplicatedBrickBatchError.SlotStrideMismatch ? 4 : 2;
+                    writer.Write((ushort)stride);
+                    writer.WriteBytes(new byte[Sector.BLOCKS_IN_BRICK * stride]);
                 }
-                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
-                fixed (byte* ptr = writer.Buffer)
-                    new ApplyBatchJob { Target = target, Payload = ptr,
-                        Length = writer.Length - (error == ReplicatedBrickBatchError.Truncated ? 1 : 0),
-                        Count = 2, Result = result }.Schedule().Complete();
-                Assert.That(result[0], Is.EqualTo(error));
-                Assert.That(target.Get().brickMap.Count, Is.Zero);
-                Assert.That(target.Get().sectorDirtyFlags, Is.Zero);
+
+                byte[] payload = writer.AsSpan().ToArray();
+                int length = payload.Length - (error == ReplicatedBrickBatchError.Truncated ? 1 : 0);
+                Assert.That(ApplyBatch(in data, payload, length, 2), Is.EqualTo(error));
+                Assert.That(data.sectors.Count, Is.Zero, "an invalid message must not create storage");
             }
-            finally { target.Dispose(Allocator.Persistent); }
+            finally
+            {
+                data.Dispose();
+            }
         }
 
         [TestCase(false)]
         [TestCase(true)]
-        public void NativeBrickBatch_ExistingStoragePreservesStrideAndDirtySemantics(bool mismatch)
+        public void Batch_ExistingStoragePreservesStrideAndDirtySemantics(bool mismatch)
         {
-            SectorHandle target = SectorHandle.AllocEmpty();
+            var data = new VoxelEntityData(Allocator.Persistent);
             try
             {
-                target.Get().SetBlock(1, 1, 1, new Block(0x8001));
-                target.Get().ClearAllDirtyFlags();
+                data.SetBlock(new int3(1, 1, 1), new Block(0x8001));
+                data.ClearDirtyFlags();
+
                 var writer = new NetMessageWriter();
-                writer.Write((ushort)0);
-                writer.Write((ushort)DirtyFlags.GeneralAutomata);
+                writer.Write(int3.zero);
+                writer.Write((byte)BrickOp.Update);
                 writer.Write((byte)1);
                 writer.Write((byte)SectorSlotId.Block);
                 int stride = mismatch ? 4 : 2;
                 writer.Write((ushort)stride);
                 writer.WriteBytes(new byte[Sector.BLOCKS_IN_BRICK * stride]);
-                using var result = new NativeArray<ReplicatedBrickBatchError>(1, Allocator.TempJob);
-                fixed (byte* ptr = writer.Buffer)
-                    new ApplyBatchJob { Target = target, Payload = ptr, Length = writer.Length,
-                        Count = 1, Result = result }.Schedule().Complete();
-                Assert.That(result[0], Is.EqualTo(mismatch ? ReplicatedBrickBatchError.SlotStrideMismatch : ReplicatedBrickBatchError.None));
-                Assert.That(target.Get().GetBlock(1, 1, 1), Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
-                Assert.That(target.Get().brickMap.Count, Is.EqualTo(1));
-                Assert.That(target.Get().brickDirtyFlags[0], Is.EqualTo(mismatch ? 0 : (ushort)Sector.ReplicationApplyFlags));
-                target.Get().ClearAllDirtyFlags();
-                // Zero-slot records must preserve an allocated brick, its contents and flags.
+
+                Assert.That(ApplyBatch(in data, writer.AsSpan().ToArray(), 1),
+                    Is.EqualTo(mismatch ? ReplicatedBrickBatchError.SlotStrideMismatch : ReplicatedBrickBatchError.None));
+                Assert.That(data.GetBlock(new int3(1, 1, 1)),
+                    Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
+                Assert.That(BrickCount(data), Is.EqualTo(1));
+                Assert.That(DirtyAt(data, int3.zero),
+                    Is.EqualTo(mismatch ? 0 : (ushort)BrickReplication.ReplicationApplyFlags));
+
+                data.ClearDirtyFlags();
+
+                // Zero-slot records must preserve an allocated brick, its contents and its flags.
                 writer.Reset();
-                writer.Write((ushort)0);
-                writer.Write((ushort)0);
+                writer.Write(int3.zero);
+                writer.Write((byte)BrickOp.Update);
                 writer.Write((byte)0);
-                fixed (byte* ptr = writer.Buffer)
-                    new ApplyBatchJob { Target = target, Payload = ptr, Length = writer.Length,
-                        Count = 1, Result = result }.Schedule().Complete();
-                Assert.That(result[0], Is.EqualTo(ReplicatedBrickBatchError.None));
-                Assert.That(target.Get().GetBlock(1, 1, 1), Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
-                Assert.That(target.Get().brickMap.Count, Is.EqualTo(1));
-                Assert.That(target.Get().sectorDirtyFlags, Is.Zero);
+                Assert.That(ApplyBatch(in data, writer.AsSpan().ToArray(), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(data.GetBlock(new int3(1, 1, 1)),
+                    Is.EqualTo(mismatch ? new Block(0x8001) : Block.Empty));
+                Assert.That(BrickCount(data), Is.EqualTo(1));
+                Assert.That(data.sectors[int3.zero].Get().sectorDirtyFlags, Is.Zero);
             }
-            finally { target.Dispose(Allocator.Persistent); }
+            finally
+            {
+                data.Dispose();
+            }
         }
+
+        [Test]
+        public void Batch_MessagesForOneEntityApplyInReceiveOrder()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var target = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var key = new int3(1, 1, 1);
+                var block = new int3(9, 9, 9);
+                var writer = new NetMessageWriter();
+                var offsets = new int[3];
+                var lengths = new int[3];
+
+                for (int i = 0; i < 3; i++)
+                {
+                    source.SetBlock(block, new Block((ushort)(0x8001 + i)));
+                    byte[] record = Record(source, key, BrickOp.Update, BlockOnly);
+                    offsets[i] = writer.Length;
+                    lengths[i] = record.Length;
+                    writer.WriteBytes(record);
+                }
+
+                byte[] payload = writer.AsSpan().ToArray();
+                using (var applier = new BrickBatchApplier())
+                fixed (byte* ptr = payload)
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        applier.Add(in target, ptr + offsets[i], lengths[i], 1);
+                    }
+
+                    Assert.That(applier.MessageCount, Is.EqualTo(3));
+                    applier.Flush();
+                    for (int i = 0; i < 3; i++)
+                    {
+                        Assert.That(applier.Errors[i], Is.EqualTo(ReplicatedBrickBatchError.None));
+                    }
+                }
+
+                Assert.That(target.GetBlock(block), Is.EqualTo(new Block(0x8003)), "the last message wins");
+            }
+            finally
+            {
+                source.Dispose();
+                target.Dispose();
+            }
+        }
+
+        // ---- Removals ----------------------------------------------------------------------
+
+        [Test]
+        public void Batch_RemoveFreesBrickPublishesRemovedAndMarksNeighbours()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var data = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var removedKey = new int3(1, 1, 1);
+                var neighbourKey = new int3(2, 1, 1);
+                data.SetBlock(BrickKey.ToBlockOrigin(removedKey), new Block(0x8001));
+                data.SetBlock(BrickKey.ToBlockOrigin(neighbourKey), new Block(0x8002));
+                data.ClearDirtyFlags();
+                Assert.That(data.ChangeCount, Is.Zero);
+
+                Assert.That(ApplyBatch(in data, Record(source, removedKey, BrickOp.Remove, BlockOnly), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+
+                Assert.That(data.IsBrickAllocated(removedKey), Is.False);
+                Assert.That(data.sectors.ContainsKey(int3.zero), Is.True, "the sector still holds another brick");
+                Assert.That(data.ChangeCount, Is.EqualTo(1));
+
+                BrickChange change = data.GetChange(0);
+                Assert.That(change.Kind, Is.EqualTo(ChangeKind.Removed));
+                Assert.That(change.Key, Is.EqualTo(removedKey));
+
+                ushort dirty = DirtyAt(data, removedKey);
+                Assert.That(dirty & (ushort)DirtyFlags.BlockBrickRemoved, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+
+                data.PropagateDirtyFlags(DirtyFlags.GeometryWithLocalNeighbor).Complete();
+                Assert.That(RequireAt(data, neighbourKey) & (ushort)DirtyFlags.GeometryWithLocalNeighbor,
+                    Is.Not.EqualTo(0), "a freed brick index still re-renders its neighbours");
+            }
+            finally
+            {
+                source.Dispose();
+                data.Dispose();
+            }
+        }
+
+        [Test]
+        public void Batch_RemovingLastBrickFreesSectorAndMarksSurvivingBoundary()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var data = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var survivor = new int3(15, 0, 0);   // last brick of sector (0,0,0)
+                var removedKey = new int3(16, 0, 0); // first brick of sector (1,0,0)
+                data.SetBlock(BrickKey.ToBlockOrigin(survivor), new Block(0x8001));
+                data.SetBlock(BrickKey.ToBlockOrigin(removedKey), new Block(0x8002));
+                data.ClearDirtyFlags();
+
+                Assert.That(ApplyBatch(in data, Record(source, removedKey, BrickOp.Remove, BlockOnly), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+
+                Assert.That(data.sectors.ContainsKey(new int3(1, 0, 0)), Is.False, "an emptied sector is freed");
+                Assert.That(data.ChangeCount, Is.EqualTo(1));
+                Assert.That(data.GetChange(0).Kind, Is.EqualTo(ChangeKind.Removed));
+                Assert.That(data.GetChange(0).Key, Is.EqualTo(removedKey));
+                Assert.That(DirtyAt(data, survivor) & (ushort)DirtyFlags.GeometryWithLocalNeighbor,
+                    Is.Not.EqualTo(0), "the surviving boundary was marked by the sector removal");
+            }
+            finally
+            {
+                source.Dispose();
+                data.Dispose();
+            }
+        }
+
+        [Test]
+        public void Batch_RemoveThenUpdateSameKeyInOneMessageEndsAllocated()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var data = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var key = new int3(1, 1, 1);
+                var block = BrickKey.ToBlockOrigin(key) + new int3(2, 3, 4);
+                data.SetBlock(block, new Block(0x8001));
+                data.ClearDirtyFlags();
+
+                source.SetBlock(block, new Block(0x8007));
+                byte[] remove = Record(source, key, BrickOp.Remove, BlockOnly);
+                byte[] update = Record(source, key, BrickOp.Update, BlockOnly);
+
+                var writer = new NetMessageWriter();
+                writer.WriteBytes(remove);
+                writer.WriteBytes(update);
+                Assert.That(ApplyBatch(in data, writer.AsSpan().ToArray(), 2),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+
+                Assert.That(data.IsBrickAllocated(key), Is.True);
+                Assert.That(data.GetBlock(block), Is.EqualTo(new Block(0x8007)));
+                Assert.That(data.ChangeCount, Is.EqualTo(1));
+                Assert.That(data.GetChange(0).Kind, Is.EqualTo(ChangeKind.Removed));
+                Assert.That(data.GetChange(0).Key, Is.EqualTo(key));
+
+                data.BuildChangeList();
+                Assert.That(data.ChangeCount, Is.EqualTo(2));
+                BrickChange updated = data.GetChange(1);
+                Assert.That(updated.Kind, Is.EqualTo(ChangeKind.Updated));
+                Assert.That(updated.Key, Is.EqualTo(key));
+                Assert.That(updated.SourceFlags & DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(DirtyFlags.None));
+            }
+            finally
+            {
+                source.Dispose();
+                data.Dispose();
+            }
+        }
+
+        [Test]
+        public void Batch_RemoveOfUnknownKeyIsNoOp()
+        {
+            var source = new VoxelEntityData(Allocator.Persistent);
+            var data = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                Assert.That(ApplyBatch(in data, Record(source, new int3(40, 1, 2), BrickOp.Remove, BlockOnly), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(data.sectors.Count, Is.Zero);
+                Assert.That(data.ChangeCount, Is.Zero);
+            }
+            finally
+            {
+                source.Dispose();
+                data.Dispose();
+            }
+        }
+
+        [Test]
+        public void Batch_ZeroSlotUpdateCreatesNoSector()
+        {
+            var data = new VoxelEntityData(Allocator.Persistent);
+            try
+            {
+                var writer = new NetMessageWriter();
+                writer.Write(new int3(3, 4, 5));
+                writer.Write((byte)BrickOp.Update);
+                writer.Write((byte)0);
+
+                Assert.That(ApplyBatch(in data, writer.AsSpan().ToArray(), 1),
+                    Is.EqualTo(ReplicatedBrickBatchError.None));
+                Assert.That(data.sectors.Count, Is.Zero, "a no-op record must not leave an empty sector behind");
+                Assert.That(data.ChangeCount, Is.Zero);
+            }
+            finally
+            {
+                data.Dispose();
+            }
+        }
+
+        /// <summary>Compares two replicas brick for brick: contents, bounds and dirty flags.</summary>
+        private static void AssertStorageEqual(VoxelEntityData expected, VoxelEntityData actual)
+        {
+            Assert.That(actual.sectors.Count, Is.EqualTo(expected.sectors.Count));
+            Assert.That(BrickCount(actual), Is.EqualTo(BrickCount(expected)));
+
+            foreach (var entry in expected.sectors)
+            {
+                Assert.That(actual.sectors.TryGetValue(entry.Key, out SectorHandle actualHandle), Is.True);
+                ref Sector expectedSector = ref entry.Value.Get();
+                ref Sector actualSector = ref actualHandle.Get();
+                Assert.That(actualSector.blockAABB, Is.EqualTo(expectedSector.blockAABB));
+
+                foreach (SectorNonEmptyBrickEnumerator.BrickRef brick in expectedSector.EnumerateNonEmptyBricks())
+                {
+                    short expectedId = expectedSector.brickIdx[brick.BrickAbs];
+                    short actualId = actualSector.brickIdx[brick.BrickAbs];
+                    Assert.That(actualId, Is.Not.EqualTo(Sector.BRICKID_EMPTY));
+
+                    for (int slot = 0; slot < Sector.MAX_SLOTS; slot++)
+                    {
+                        Assert.That(actualSector.slots[slot].IsCreated,
+                            Is.EqualTo(expectedSector.slots[slot].IsCreated), $"slot {slot} existence");
+                        if (!expectedSector.slots[slot].IsCreated) continue;
+
+                        Assert.That(
+                            UnsafeUtility.MemCmp(
+                                actualSector.slots[slot].GetBrickPtr(actualId),
+                                expectedSector.slots[slot].GetBrickPtr(expectedId),
+                                expectedSector.slots[slot].BytesPerBrick),
+                            Is.Zero, $"slot {slot} of brick {brick.BrickAbs}");
+                    }
+
+                    Assert.That(actualSector.brickDirtyFlags[brick.BrickAbs],
+                        Is.EqualTo(expectedSector.brickDirtyFlags[brick.BrickAbs]));
+                }
+            }
+        }
+
+        // ---- Writer, reader, channel, registry ---------------------------------------------
 
         [Test]
         public void WriterReader_RoundTripsMixedValues()
@@ -301,117 +650,6 @@ namespace Caelix.Tests
             finally
             {
                 entity.Dispose();
-            }
-        }
-
-        [Test]
-        public void ReplicatedBrick_RoundTripsBlockSlotOnly()
-        {
-            SectorHandle source = SectorHandle.AllocEmpty();
-            SectorHandle target = SectorHandle.AllocEmpty();
-            try
-            {
-                ref Sector src = ref source.Get();
-                src.SetBlock(9, 10, 11, new Block(0x8001));
-                src.SetBlock(15, 8, 8, new Block(0x8002));
-                // A second, non-replicated slot in the same brick.
-                src.SetVoxelSlot((SectorSlotId)2, 9, 10, 11, (short)42);
-
-                int brickIdx = Sector.ToBrickIdx(1, 1, 1);
-                byte[] buffer = new byte[src.ReplicatedBrickBytes(Sector.DefaultReplicatedSlotMask)];
-                int written;
-                fixed (byte* dstPtr = buffer)
-                {
-                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
-                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
-                    written = writer.Length;
-                }
-
-                ref Sector dst = ref target.Get();
-                ApplyOneBrick(target, brickIdx, buffer, written);
-
-                // The record is exact: one byte short of the written brick is a truncated message.
-                SectorHandle scratch = SectorHandle.AllocEmpty();
-                try
-                {
-                    var shortPayload = new byte[4 + written - 1];
-                    shortPayload[0] = (byte)(brickIdx & 0xFF);
-                    shortPayload[1] = (byte)(brickIdx >> 8);
-                    Buffer.BlockCopy(buffer, 0, shortPayload, 4, written - 1);
-                    fixed (byte* shortPtr = shortPayload)
-                    {
-                        Assert.That(scratch.Get().ApplyReplicatedBrickBatch(shortPtr, shortPayload.Length, 1),
-                            Is.EqualTo(ReplicatedBrickBatchError.Truncated));
-                    }
-                }
-                finally
-                {
-                    scratch.Dispose(Allocator.Persistent);
-                }
-
-                Assert.That(dst.GetBlock(9, 10, 11), Is.EqualTo(new Block(0x8001)));
-                Assert.That(dst.GetBlock(15, 8, 8), Is.EqualTo(new Block(0x8002)));
-                Assert.That(dst.GetBlock(8, 8, 8).isEmpty, Is.True);
-                Assert.That(dst.slots[2].IsCreated, Is.False, "non-replicated slot must not arrive");
-                Assert.That(dst.NonEmptyBrickCount, Is.EqualTo(1));
-
-                ushort dirty = dst.brickDirtyFlags[brickIdx];
-                Assert.That(dirty & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.GeneralAutomata, Is.EqualTo(0), "replica must not trigger automata");
-            }
-            finally
-            {
-                source.Dispose(Allocator.Persistent);
-                target.Dispose(Allocator.Persistent);
-            }
-        }
-
-        [Test]
-        public void ReplicatedBrick_SecondApplyOverwritesWithoutBrickAdded()
-        {
-            SectorHandle source = SectorHandle.AllocEmpty();
-            SectorHandle target = SectorHandle.AllocEmpty();
-            try
-            {
-                ref Sector src = ref source.Get();
-                ref Sector dst = ref target.Get();
-                int brickIdx = Sector.ToBrickIdx(0, 0, 0);
-
-                src.SetBlock(1, 1, 1, new Block(0x8001));
-                byte[] buffer = new byte[src.ReplicatedBrickBytes(Sector.DefaultReplicatedSlotMask)];
-                int written;
-                fixed (byte* dstPtr = buffer)
-                {
-                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
-                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
-                    written = writer.Length;
-                }
-
-                ApplyOneBrick(target, brickIdx, buffer, written);
-                dst.ClearAllDirtyFlags();
-
-                src.SetBlock(1, 1, 1, Block.Empty);
-                src.SetBlock(2, 2, 2, new Block(0x8003));
-                fixed (byte* dstPtr = buffer)
-                {
-                    var writer = new UnsafeNetWriter(dstPtr, buffer.Length);
-                    src.WriteReplicatedBrick(ref writer, brickIdx, Sector.DefaultReplicatedSlotMask);
-                    written = writer.Length;
-                }
-
-                ApplyOneBrick(target, brickIdx, buffer, written);
-
-                Assert.That(dst.GetBlock(1, 1, 1).isEmpty, Is.True);
-                Assert.That(dst.GetBlock(2, 2, 2), Is.EqualTo(new Block(0x8003)));
-                Assert.That(dst.brickDirtyFlags[brickIdx] & (ushort)DirtyFlags.BlockBrickAdded, Is.EqualTo(0));
-                Assert.That(dst.brickDirtyFlags[brickIdx] & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
-            }
-            finally
-            {
-                source.Dispose(Allocator.Persistent);
-                target.Dispose(Allocator.Persistent);
             }
         }
 
