@@ -55,14 +55,24 @@ namespace Caelix.IO
                         occupancy |= 1u << subIdx;
 
                         ushort id = block.id;
-                        if ((id & 0x1) != 0)
+                        if (BlockEncoding.PackedSceneColor ? PackedSceneColor.IsEmissive(id) : (id & 0x1) != 0)
                         {
                             emission |= 1u << subIdx;
                         }
 
-                        sumR += (uint)((id >> 11) & 0x1F);
-                        sumG += (uint)((id >> 6) & 0x1F);
-                        sumB += (uint)((id >> 1) & 0x1F);
+                        if (BlockEncoding.PackedSceneColor)
+                        {
+                            var rgb = PackedSceneColor.Color5(id);
+                            sumR += (uint)rgb.x;
+                            sumG += (uint)rgb.y;
+                            sumB += (uint)rgb.z;
+                        }
+                        else
+                        {
+                            sumR += (uint)((id >> 11) & 0x1F);
+                            sumG += (uint)((id >> 6) & 0x1F);
+                            sumB += (uint)((id >> 1) & 0x1F);
+                        }
                         count++;
                     }
 

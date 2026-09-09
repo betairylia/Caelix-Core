@@ -9,8 +9,8 @@ namespace Caelix
     /// Uses a 16-bit packed format for efficient storage and rendering.
     /// </summary>
     /// <remarks>
-    /// The block data is encoded as follows:
-    /// The block data encodes RGB555 color (5 bits per channel) plus 1 emission bit.
+    /// Interpretation is selected at compile time by <see cref="BlockEncoding"/>.
+    /// Packed scene mode uses RGB555 opaque, RGB444 emissive, or shared glass IDs.
     /// Metadata lives in the sector's <see cref="Meta"/> slot, not in <see cref="Block"/>.
     /// </remarks>
     [Serializable]
@@ -24,9 +24,6 @@ namespace Caelix
         // Perhaps we can just use a LUT and free those bits
         // private const uint PhaseMask = 0xC0000000; // 00 - Gas; 01 - Liquid; 10 - Powder; 11 - Solid
         // private const uint PhaseShift= 30;
-        private const int OpaqueMask = 0x8000;
-        private const uint TransMask = 0x01FF;      // Transparent blocks have 0~1FF (512) valid blockID slots
-        private const int TFaceShift = 9;           // 6 bits for transparent blocks will be used to represent boundaries
 
         /// <summary>
         /// Gets the block ID portion of the packed data.
@@ -46,11 +43,11 @@ namespace Caelix
         public static bool IsRendererDataEmpty(uint data) => data == 0;
         // public bool isVoid => (data == 0);
 
-        public bool isOpaque => (id & OpaqueMask) > 0;
-        public uint transparentId => (id & TransMask);
+        public bool isOpaque => BlockEncoding.IsOpaque(id);
+        public uint transparentId => BlockEncoding.TransparentId(id);
 
         public static uint MaskTransparency(uint faceMask, uint transparencyId)
-            => transparencyId + (faceMask << TFaceShift);
+            => BlockEncoding.WithFaces(faceMask, transparencyId);
 
         /// <summary>
         /// Constructs a block with the specified block ID.
@@ -70,6 +67,14 @@ namespace Caelix
         /// <param name="emission">Whether this block emits light.</param>
         public Block(int r, int g, int b, bool emission)
         {
+            if (BlockEncoding.PackedSceneColor)
+            {
+                data = emission
+                    ? PackedSceneColor.Emissive(math.clamp(r, 0, 31) * 15 / 31,
+                        math.clamp(g, 0, 31) * 15 / 31, math.clamp(b, 0, 31) * 15 / 31, 0)
+                    : PackedSceneColor.Opaque(r, g, b);
+                return;
+            }
             int id = (r << 11) | (g << 6) | (b << 1) | (emission ? 1 : 0);
             data = (ushort)id;
         }
@@ -83,13 +88,11 @@ namespace Caelix
         /// <param name="emission">Emission value; any value > 0 enables emission.</param>
         public Block(float r, float g, float b, float emission)
         {
-            int rr = (int)math.floor(r * 32.0f);
-            int gg = (int)math.floor(g * 32.0f);
-            int bb = (int)math.floor(b * 32.0f);
+            int rr = math.clamp((int)math.floor(r * 32.0f), 0, 31);
+            int gg = math.clamp((int)math.floor(g * 32.0f), 0, 31);
+            int bb = math.clamp((int)math.floor(b * 32.0f), 0, 31);
             bool emi = emission > 0;
-
-            int id = (rr << 11) | (gg << 6) | (bb << 1) | (emi ? 1 : 0);
-            data = (ushort)id;
+            data = new Block(rr, gg, bb, emi).data;
         }
 
         /// <summary>

@@ -38,6 +38,30 @@ is a `ushort` (16 bits). Metadata lives in a separate slot. Empty Block means
 
 ## Coordinates and IDs
 
+### Experimental packed scene materials
+
+The `dev/astra/raw-color-materials` experiment selects its encoding at compile time.
+Keep `CAELIX_PACKED_SCENE_COLOR` in `Runtime/BlockEncoding.cs` and Caelix's
+`Runtime/Rendering/Shaders/def/CaelixMaterialConfig.hlsl` enabled together. Comment
+out both defines to use regular block IDs. Restart with the matching scene data;
+there is no runtime switch or additional encoding marker in `.cxw` files.
+
+| Prefix | Remaining bits |
+|---|---|
+| `1` | RGB555, including opaque black. |
+| `01` | RGB444 and two emission-strength bits (1, 8, 64, 512). |
+| `00` | Six derived face bits and an eight-bit shared glass ID; ID zero is air. |
+
+Canonical Block data stores glass IDs without face bits. The renderer adds faces
+when preparing its data. The shared glass palette is generated from Caelix's
+`Tools~/RawColor/glass-palette.json` for both C# and HLSL. Emission also has a global
+shader multiplier, `CAELIX_PACKED_EMISSION_SCALE`. Packed mode disables world
+automata because scene color values do not identify gameplay blocks.
+
+Caelix's `Tools~/RawColor` exports native v6 `.cxw` saves directly from voxelized
+source materials. Existing RGB-only VL32 files cannot recover lost emission or
+glass properties. Keep generated scenes outside Unity package/project folders.
+
 Entity-local voxel coordinates can be negative. Sector coordinates select the
 sector; sector-local voxel coordinates range from 0 to 127. Brick coordinates
 inside a sector range from 0 to 15. Voxel coordinates inside a brick range from
