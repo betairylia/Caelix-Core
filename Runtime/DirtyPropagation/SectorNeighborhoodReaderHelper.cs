@@ -12,8 +12,13 @@ namespace Caelix
     /// <remarks>
     /// Example: Accessing block at (-1, -1, -1) will automatically fetch from the
     /// appropriate neighboring sector at position (127, 127, 127).
+    /// <para>
+    /// Implements <see cref="IBlockReader"/> in SECTOR-local block coordinates, so a consumer
+    /// written against that interface can share its culling code with
+    /// <see cref="VoxelNeighborhood"/>, which reads entity-local ones.
+    /// </para>
     /// </remarks>
-    public unsafe struct SectorNeighborhoodReaderHelper
+    public unsafe struct SectorNeighborhoodReaderHelper : IBlockReader
     {
         private SectorHandle centerSector;
         private SectorNeighborHandles neighbors;

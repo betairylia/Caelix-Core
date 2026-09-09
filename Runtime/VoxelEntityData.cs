@@ -73,6 +73,8 @@ namespace Caelix
             isProtected = false;
             excludeFromSave = false;
             Guid = Guid128.Zero;
+            changeLog = null;
+            InitializeChangeLog(allocator);
         }
 
         public VoxelEntityData(Allocator allocator, ref Unity.Mathematics.Random random)
@@ -199,6 +201,8 @@ namespace Caelix
                     }
                 }
             }
+
+            MarkStorageMutated();
         }
 
         /// <summary>
@@ -208,6 +212,10 @@ namespace Caelix
         /// </summary>
         /// <param name="pos">The sector position to remove.</param>
         /// <returns>True if the sector was found and removed, false otherwise.</returns>
+        /// <remarks>
+        /// Every allocated brick of the sector is published as a <see cref="ChangeKind.Removed"/>
+        /// change first: once the storage is freed, a scan of what is left cannot discover it.
+        /// </remarks>
         public bool RemoveSectorAt(int3 pos)
         {
             if (!sectors.ContainsKey(pos))
@@ -215,6 +223,7 @@ namespace Caelix
                 return false;
             }
 
+            AppendRemovedBricks(pos);
             MarkSurvivingBoundaryDirty(pos);
 
             // Update neighbors
@@ -231,6 +240,7 @@ namespace Caelix
             sectorNeighbors[pos].Dispose(Allocator.Persistent);
             sectors.Remove(pos);
             sectorNeighbors.Remove(pos);
+            MarkStorageMutated();
             return true;
         }
 
@@ -544,6 +554,8 @@ namespace Caelix
         /// </summary>
         public void Dispose()
         {
+            DisposeChangeLog();
+
             if (!sectors.IsCreated)
             {
                 return;
