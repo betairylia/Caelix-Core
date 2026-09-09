@@ -131,7 +131,7 @@ namespace Caelix
 
         /// <summary>
         /// Marks an EXISTING brick position as requiring work: the require-update side only, with
-        /// no propagation and no allocation. No-op when the brick's storage does not exist.
+        /// no propagation and no allocation. No-op when the sector or the brick is not allocated.
         /// </summary>
         /// <remarks>For external markers such as alien propagation, which have already decided their targets.</remarks>
         public void MarkRequired(int3 key, DirtyFlags flags)
@@ -141,7 +141,16 @@ namespace Caelix
                 return;
             }
 
-            handle.Get().MarkBrickRequireUpdate(SectorKeys.ToBrickIdx(key), flags);
+            ref Sector sector = ref handle.Get();
+            int brickIdx = SectorKeys.ToBrickIdx(key);
+            if (sector.brickIdx[brickIdx] == Sector.BRICKID_EMPTY)
+            {
+                // An unallocated position has nothing to work on; marking it would surface as
+                // phantom automata work through CollectRequiredBricks(includeEmpty: true).
+                return;
+            }
+
+            sector.MarkBrickRequireUpdate(brickIdx, flags);
         }
 
         /// <summary>

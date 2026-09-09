@@ -341,6 +341,11 @@ namespace Caelix
                 pos.z & (Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS)),
                 value
             );
+
+            // A write may allocate a brick and grow the sector's slot buffers, which moves every
+            // pointer bound into them. Advanced on every write rather than only on growth: the
+            // epoch is advisory (see StorageEpoch) and a write is a mutation-phase action anyway.
+            MarkStorageMutated();
         }
 
         /// <summary>

@@ -168,8 +168,11 @@ namespace Caelix
         /// <see cref="RemoveSectorAt"/>, <see cref="MarkStorageMutated"/>.
         /// </summary>
         /// <remarks>
-        /// A bound brick pointer is valid only while this value is unchanged. Nothing re-validates
-        /// it in this milestone; it exists so a consumer can assert the phase rule.
+        /// ADVISORY. A changed value proves that bound pointers are stale; an unchanged value does
+        /// not prove they are valid, because writes that bypass this facade (a job calling
+        /// <c>Sector.SetVoxelSlot</c> directly) grow slot buffers without advancing it. The phase
+        /// rule on <see cref="VoxelEntityData"/> is the guarantee; this counter only lets a
+        /// consumer catch the obvious violations.
         /// </remarks>
         public uint StorageEpoch => changeLog != null ? changeLog->Epoch : 0u;
 
