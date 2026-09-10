@@ -128,13 +128,17 @@ namespace Caelix
         private bool TryResolveRegion(int3 key, ref BrickCursor cursor, out SectorHandle handle)
         {
             int3 sectorPos = SectorKeys.ToSectorPos(key);
-            if (!cursor.Valid || math.any(cursor.SectorPos != sectorPos))
+            System.IntPtr owner = sectors.Identity;
+            if (!cursor.Valid || cursor.Owner != owner || math.any(cursor.SectorPos != sectorPos))
             {
+                // The owner test keeps a cursor that was filled from another entity's storage from
+                // answering for this one: same region coordinate, different map.
                 if (!sectors.TryGetValue(sectorPos, out cursor.Handle))
                 {
                     cursor.Handle = default;
                 }
 
+                cursor.Owner = owner;
                 cursor.SectorPos = sectorPos;
                 cursor.Valid = true;
             }

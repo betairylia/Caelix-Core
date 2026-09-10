@@ -41,6 +41,12 @@ namespace Caelix
         public int Count => map != null ? map->Count : 0;
 
         /// <summary>
+        /// Address of the shared map: the same for every copy of this wrapper and different for
+        /// every other map, so it identifies the storage a cache was filled from.
+        /// </summary>
+        internal IntPtr Identity => (IntPtr)map;
+
+        /// <summary>
         /// Guards the members that dereference the map. Compiled out without collections checks, so
         /// it costs nothing in a release build; the message is a constant, so Burst accepts it.
         /// </summary>

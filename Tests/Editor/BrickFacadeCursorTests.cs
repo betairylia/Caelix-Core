@@ -22,6 +22,27 @@ namespace Caelix.Tests
         // ---- 1. Cursor ---------------------------------------------------------------------
 
         [Test]
+        public void CursorFilledFromOneEntityDoesNotAnswerForAnother()
+        {
+            // Reviewer probe (milestone 3 review): A holds brick (0,0,0); B has an empty region at
+            // the same coordinate. A cursor filled from A must not report A's storage for B.
+            using var a = new EntityDataTestScope();
+            using var b = new EntityDataTestScope();
+            a.Data.SetBlock(new int3(1, 1, 1), Solid());
+            b.Data.EnsureRegion(int3.zero);
+
+            BrickCursor cursor = default;
+            Assert.That(a.Data.IsBrickAllocated(int3.zero, ref cursor), Is.True);
+            Assert.That(b.Data.IsBrickAllocated(int3.zero), Is.False);
+            Assert.That(b.Data.IsBrickAllocated(int3.zero, ref cursor), Is.False, "cursor reused across entities");
+            Assert.That(b.Data.TryBindBrick(SectorSlotId.Block, int3.zero, ref cursor, out Block* bound), Is.False);
+            Assert.That((IntPtr)bound, Is.EqualTo(IntPtr.Zero));
+
+            // And back: the cursor now belongs to B and must re-resolve for A.
+            Assert.That(a.Data.IsBrickAllocated(int3.zero, ref cursor), Is.True);
+        }
+
+        [Test]
         public void CursorOverloadsMatchThePlainOnes()
         {
             using var scope = new EntityDataTestScope();

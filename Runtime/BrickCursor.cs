@@ -17,6 +17,9 @@ namespace Caelix
     public struct BrickCursor
     {
         /// <summary>Region position the cached handle belongs to. Meaningful only while <see cref="Valid"/>.</summary>
+        /// <summary>Storage the cache was filled from; a cursor handed to another entity starts over.</summary>
+        internal System.IntPtr Owner;
+
         internal int3 SectorPos;
 
         /// <summary>The cached storage handle, null when that region is absent.</summary>
