@@ -427,7 +427,7 @@ namespace Caelix
         /// Visit unallocated brick positions too. That is the automata contract: a neighbour can
         /// flag a position that holds no storage yet, and the stage is expected to see it.
         /// </param>
-        /// <param name="into">Destination list. Entries are appended, never cleared.</param>
+        /// <param name="into">Destination list. Entries are appended, never cleared. Allocated with TempJob or Persistent, never Temp: the collector is a job, and a Temp container cannot be scheduled.</param>
         public void CollectRequiredBricks(
             Guid128 entityId, DirtyFlags mask, bool includeEmpty, NativeList<RequiredBrick> into)
         {
