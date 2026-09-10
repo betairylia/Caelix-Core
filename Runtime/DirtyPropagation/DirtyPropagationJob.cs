@@ -71,7 +71,7 @@ namespace Caelix
     /// The propagation respects the configured neighborhood type (Von Neumann or Moore).
     /// </remarks>
     [BurstCompile]
-    public unsafe struct DirtyPropagationJob : IJobParallelFor
+    internal unsafe struct DirtyPropagationJob : IJobParallelFor
     {
         [ReadOnly] public NativeArray<int3> allSectorPositions;
         [ReadOnly] public SharedHashMap<int3, SectorHandle> sectors;

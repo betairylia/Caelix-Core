@@ -19,7 +19,7 @@ namespace Caelix
     /// serialized: it is recomputed from <see cref="data"/> for dirty bricks once a tick's edits
     /// settle.
     /// </summary>
-    public unsafe struct SectorSlotStorage
+    internal unsafe struct SectorSlotStorage
     {
         [NativeDisableUnsafePtrRestriction]
         public UnsafeList<byte> data;   // per-voxel: brickCapacity * BLOCKS_IN_BRICK * stride bytes
@@ -209,7 +209,7 @@ namespace Caelix
         }
     }
 
-    public unsafe partial struct Sector
+    internal unsafe partial struct Sector
     {
         /// <summary>
         /// Fixed table of enum-addressed slot storage. Slot data uses the shared <see cref="brickMap"/>

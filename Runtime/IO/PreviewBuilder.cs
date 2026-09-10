@@ -95,12 +95,12 @@ namespace Caelix.IO
             }
         }
 
-        public static void Build(Sector* sector, uint* dst)
+        internal static void Build(Sector* sector, uint* dst)
         {
             new PreviewBuildJob { sector = sector, dst = dst }.Run();
         }
 
-        public static void Build(Sector* sector, uint[] dst)
+        internal static void Build(Sector* sector, uint[] dst)
         {
             fixed (uint* p = dst) Build(sector, p);
         }

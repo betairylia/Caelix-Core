@@ -9,14 +9,12 @@ namespace Caelix
         public Guid128 EntityId;
         public RigidTransform LocalToWorld;
         public float4x4 WorldToLocal;
-        [ReadOnly] public SharedHashMap<int3, SectorHandle> Sectors;
         public float3 WorldAabbMin;
         public float3 WorldAabbMax;
 
         /// <summary>
-        /// The alien entity's storage, read through the brick-key facade. A view that carries it
-        /// resolves every read through <see cref="VoxelEntityData"/>; a view built the older way,
-        /// with <see cref="Sectors"/> alone, still works and is what the fallback below is for.
+        /// The alien entity's storage. Every read below resolves through the brick-key facade on
+        /// <see cref="VoxelEntityData"/>; a view with no storage reads as empty.
         /// </summary>
         public VoxelEntityData Data;
 
@@ -25,43 +23,14 @@ namespace Caelix
             return math.all(worldPoint >= WorldAabbMin) && math.all(worldPoint <= WorldAabbMax);
         }
 
-        public Block GetBlockAtLocalVoxel(int3 localVoxel)
-        {
-            if (Data.sectors.IsCreated)
-            {
-                return Data.GetBlock(localVoxel);
-            }
-
-            int3 sectorPos = localVoxel >> (Sector.SHIFT_IN_BLOCKS + Sector.SHIFT_IN_BRICKS);
-            if (!Sectors.TryGetValue(sectorPos, out SectorHandle sector))
-            {
-                return Block.Empty;
-            }
-
-            int mask = Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS);
-            return sector.GetBlock(localVoxel.x & mask, localVoxel.y & mask, localVoxel.z & mask);
-        }
+        public Block GetBlockAtLocalVoxel(int3 localVoxel) => Data.GetBlock(localVoxel);
 
         /// <summary>
         /// One slot value at an entity-local block position of the ALIEN entity, or
         /// <c>default</c> where it has no storage there.
         /// </summary>
         public T GetSlotAtLocalVoxel<T>(SectorSlotId slotId, int3 localVoxel) where T : unmanaged
-        {
-            if (Data.sectors.IsCreated)
-            {
-                return Data.GetSlot<T>(slotId, localVoxel);
-            }
-
-            int3 sectorPos = localVoxel >> (Sector.SHIFT_IN_BLOCKS + Sector.SHIFT_IN_BRICKS);
-            if (!Sectors.TryGetValue(sectorPos, out SectorHandle sector))
-            {
-                return default;
-            }
-
-            int mask = Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS);
-            return sector.GetSlot<T>(slotId, localVoxel.x & mask, localVoxel.y & mask, localVoxel.z & mask);
-        }
+            => Data.GetSlot<T>(slotId, localVoxel);
     }
 
     public struct AlienOccupancyQuery
@@ -99,55 +68,8 @@ namespace Caelix
         }
     }
 
-    public struct VoxelNeighborhoodReader
-    {
-        private Guid128 selfEntityId;
-        private int3 centerSectorPos;
-        private RigidTransform selfLocalToWorld;
-        private SectorNeighborhoodReaderHelper localReader;
-        private AlienOccupancyQuery alienQuery;
-
-        public static VoxelNeighborhoodReader Create(BrickInfo brickInfo, AlienOccupancyQuery alienQuery)
-        {
-            return new VoxelNeighborhoodReader
-            {
-                selfEntityId = brickInfo.EntityId,
-                centerSectorPos = brickInfo.SectorPos,
-                selfLocalToWorld = brickInfo.LocalToWorld,
-                localReader = new SectorNeighborhoodReaderHelper(brickInfo.Sector, brickInfo.Neighbors),
-                alienQuery = alienQuery
-            };
-        }
-
-        public Block GetLocalBlock(int3 sectorLocalVoxel) => localReader.GetBlock(sectorLocalVoxel);
-
-        public Block GetBlock(int3 sectorLocalVoxel)
-        {
-            Block localBlock = localReader.GetBlock(sectorLocalVoxel);
-            if (!localBlock.isEmpty)
-            {
-                return localBlock;
-            }
-
-            int3 selfEntityLocalVoxel = centerSectorPos * Sector.SECTOR_SIZE_IN_BLOCKS + sectorLocalVoxel;
-            return alienQuery.GetFirstOccupyingAlienBlock(selfEntityId, selfLocalToWorld, selfEntityLocalVoxel);
-        }
-
-        public bool IsVoxelSpaceOccupied(int3 sectorLocalVoxel)
-        {
-            if (!localReader.GetBlock(sectorLocalVoxel).isEmpty)
-            {
-                return true;
-            }
-
-            int3 selfEntityLocalVoxel = centerSectorPos * Sector.SECTOR_SIZE_IN_BLOCKS + sectorLocalVoxel;
-            return alienQuery.IsVoxelSpaceOccupied(selfEntityId, selfLocalToWorld, selfEntityLocalVoxel);
-        }
-    }
-
     /// <summary>
-    /// Alien-aware reads for one automata brick, in ENTITY-LOCAL block coordinates. The keyed
-    /// successor of <see cref="VoxelNeighborhoodReader"/>, which reads sector-local ones.
+    /// Alien-aware reads for one automata brick, in ENTITY-LOCAL block coordinates.
     /// </summary>
     /// <remarks>
     /// Local reads go through the brick's own window (front buffer, see
@@ -213,11 +135,6 @@ namespace Caelix
         /// only: an automata stage writes through <see cref="AutomataBrick"/>, never through this.
         /// </summary>
         [ReadOnly] public NativeHashMap<Guid128, VoxelEntityData> Entities;
-
-        public VoxelNeighborhoodReader CreateReader(BrickInfo brickInfo)
-        {
-            return VoxelNeighborhoodReader.Create(brickInfo, AlienQuery);
-        }
 
         /// <summary>
         /// Opens the brick a work record names. Returns an empty, write-dropping brick when the

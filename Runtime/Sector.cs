@@ -18,7 +18,7 @@ namespace Caelix
     /// Only bricks containing non-empty blocks consume memory. This allows for efficient storage
     /// of large voxel worlds with sparse geometry.
     /// </remarks>
-    public unsafe partial struct Sector
+    internal unsafe partial struct Sector
     {
         // Brick-level constants (isometric: uniform across all axes)
         /// <summary>Bit shift for brick size (brick is 8 blocks per axis).</summary>
@@ -635,7 +635,7 @@ namespace Caelix
     /// <summary>
     /// Iterator structure for enumerating blocks within a sector along with their positions.
     /// </summary>
-    public struct BrickIterator
+    internal struct BrickIterator
     {
         /// <summary>
         /// The brick at the current iterator position.

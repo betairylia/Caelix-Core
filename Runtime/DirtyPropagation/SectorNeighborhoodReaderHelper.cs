@@ -18,7 +18,7 @@ namespace Caelix
     /// <see cref="VoxelNeighborhood"/>, which reads entity-local ones.
     /// </para>
     /// </remarks>
-    public unsafe struct SectorNeighborhoodReaderHelper : IBlockReader
+    internal unsafe struct SectorNeighborhoodReaderHelper : IBlockReader
     {
         private SectorHandle centerSector;
         private SectorNeighborHandles neighbors;

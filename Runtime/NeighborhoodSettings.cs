@@ -171,7 +171,7 @@ namespace Caelix
         /// Precomputed lookup table for voxel position to propagation direction mask.
         /// Index: voxel flat index within brick (0-511), Value: bitmask of 26 neighbor directions.
         /// </summary>
-        public static readonly uint[] s_voxelPropagationMasks = new uint[512]
+        internal static readonly uint[] s_voxelPropagationMasks = new uint[512]
         {
             0x0202222A, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x002208A9,
             0x00002022, 0x00000020, 0x00000020, 0x00000020, 0x00000020, 0x00000020, 0x00000020, 0x00000821,
@@ -243,7 +243,7 @@ namespace Caelix
         /// Precomputed lookup table for brick position to sector neighbor directions.
         /// Index: brick flat index (0-4095), Value: bitmask of 26 sector neighbor directions this brick touches.
         /// </summary>
-        public static readonly uint[] s_brickSectorNeighborMasks = new uint[4096]
+        internal static readonly uint[] s_brickSectorNeighborMasks = new uint[4096]
         {
             0x0202222A, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028,
             0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x00020028, 0x002208A9,

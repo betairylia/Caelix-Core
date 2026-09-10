@@ -7,14 +7,14 @@ namespace Caelix.Tests.TestSupport
 {
     public unsafe sealed class SectorTestScope : IDisposable
     {
-        public SectorHandle Handle;
+        internal SectorHandle Handle;
 
         public SectorTestScope(int initialBricks = 1)
         {
             Handle = SectorHandle.AllocEmpty(initialBricks);
         }
 
-        public ref Sector Sector => ref Handle.Get();
+        internal ref Sector Sector => ref Handle.Get();
 
         public void Set(int x, int y, int z, ushort id = 1)
         {

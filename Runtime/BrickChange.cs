@@ -43,9 +43,9 @@ namespace Caelix
     /// <see cref="VoxelEntityData.CollectRequiredBricks"/>.
     /// </summary>
     /// <remarks>
-    /// The keyed replacement for <see cref="BrickInfo"/>, whose <c>BrickOrigin</c> is sector-local
-    /// and therefore leaks the storage layout into game code. The consumer ports land in a later
-    /// milestone; both records exist meanwhile.
+    /// The key is entity-local, so nothing here leaks the storage layout into game code. It
+    /// replaced an older sector-local record that carried a sector handle and a sector-local
+    /// brick origin.
     /// </remarks>
     public struct RequiredBrick
     {

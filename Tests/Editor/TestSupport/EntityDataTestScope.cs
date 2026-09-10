@@ -18,7 +18,7 @@ namespace Caelix.Tests.TestSupport
             Data.isStatic = false;
         }
 
-        public SectorHandle AddSector(int3 sectorPos)
+        internal SectorHandle AddSector(int3 sectorPos)
         {
             var handle = SectorHandle.AllocEmpty();
             try
@@ -33,12 +33,12 @@ namespace Caelix.Tests.TestSupport
             return handle;
         }
 
-        public SectorHandle SectorAt(int3 sectorPos)
+        internal SectorHandle SectorAt(int3 sectorPos)
         {
             return Data.sectors[sectorPos];
         }
 
-        public SectorNeighborHandles NeighborsAt(int3 sectorPos)
+        internal SectorNeighborHandles NeighborsAt(int3 sectorPos)
         {
             return Data.sectorNeighbors[sectorPos];
         }

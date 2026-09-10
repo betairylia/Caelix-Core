@@ -24,7 +24,7 @@ namespace Caelix
     /// the automata stage must step.
     /// </remarks>
     [BurstCompile]
-    public struct SectorRequiredUpdateBrickEnumerator : IEnumerator<BrickIterator>
+    internal struct SectorRequiredUpdateBrickEnumerator : IEnumerator<BrickIterator>
     {
         private Sector sector;
         private DirtyFlags flagMask;
@@ -152,7 +152,7 @@ namespace Caelix
     /// One dirty brick of a sector: its ABSOLUTE index in the 4096-entry brick table (not the
     /// compact brick id) and the dirty flags of that brick that matched the enumerator's mask.
     /// </summary>
-    public struct DirtyBrickInfo
+    internal struct DirtyBrickInfo
     {
         public short BrickIdx;
         public DirtyFlags Flags;
@@ -177,7 +177,7 @@ namespace Caelix
     /// exactly the bricks whose own contents changed this tick, not the propagated neighbourhood.
     /// </remarks>
     [BurstCompile]
-    public unsafe struct SectorDirtyBrickEnumerator
+    internal unsafe struct SectorDirtyBrickEnumerator
     {
         private Sector sector;
         private DirtyFlags mask;

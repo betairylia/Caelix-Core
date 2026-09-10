@@ -34,7 +34,7 @@ namespace Caelix.IO
     /// contain it, but unpacking discards that record so a changed runtime stride cannot corrupt
     /// memory. The first dirty physics tick rebuilds it from the authoritative Block slot.
     /// </summary>
-    public static class SectorSerializer
+    internal static class SectorSerializer
     {
         private const uint SectorPayloadMagic = 0x32535856u; // VXS2, little-endian
 

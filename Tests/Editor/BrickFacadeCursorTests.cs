@@ -180,7 +180,7 @@ namespace Caelix.Tests
             scope.Data.RefreshNonEmptyMask();
 
             var found = new List<int3>();
-            foreach (SectorBitmaskSlotIterator<Block> item in
+            foreach (BrickSlotEntry<Block> item in
                      scope.Data.EnumerateBrickBitmask<Block>(SectorSlotId.Block, new int3(0, 0, 0)))
             {
                 found.Add(item.position);
@@ -191,7 +191,7 @@ namespace Caelix.Tests
             Assert.That(found, Does.Contain(new int3(5, 6, 7)));
 
             int empty = 0;
-            foreach (SectorBitmaskSlotIterator<Block> _ in
+            foreach (BrickSlotEntry<Block> _ in
                      scope.Data.EnumerateBrickBitmask<Block>(SectorSlotId.Block, new int3(9, 9, 9)))
             {
                 empty++;
@@ -409,7 +409,7 @@ namespace Caelix.Tests
             Assert.That(data.MarkRequired(int3.zero, DirtyFlags.Geometry), Is.False);
 
             int bitmask = 0;
-            foreach (SectorBitmaskSlotIterator<Block> _ in
+            foreach (BrickSlotEntry<Block> _ in
                      data.EnumerateBrickBitmask<Block>(SectorSlotId.Block, int3.zero))
             {
                 bitmask++;

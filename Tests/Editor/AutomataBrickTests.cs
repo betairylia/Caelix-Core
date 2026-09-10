@@ -215,12 +215,12 @@ namespace Caelix.Tests
                 Is.EqualTo(new Block(11)));
             Assert.That(view.GetBlockAtLocalVoxel(new int3(400, 5, 6)), Is.EqualTo(Block.Empty));
 
-            // A view built the old way, with the sector map alone, still resolves reads.
-            AlienEntityView legacy = view;
-            legacy.Data = default;
-            Assert.That(legacy.GetBlockAtLocalVoxel(new int3(4, 5, 6)), Is.EqualTo(new Block(11)));
-            Assert.That(legacy.GetSlotAtLocalVoxel<Block>(SectorSlotId.Block, new int3(4, 5, 6)),
-                Is.EqualTo(new Block(11)));
+            // A view with no storage reads as empty instead of throwing.
+            AlienEntityView storageless = view;
+            storageless.Data = default;
+            Assert.That(storageless.GetBlockAtLocalVoxel(new int3(4, 5, 6)), Is.EqualTo(Block.Empty));
+            Assert.That(storageless.GetSlotAtLocalVoxel<Block>(SectorSlotId.Block, new int3(4, 5, 6)),
+                Is.EqualTo(default(Block)));
         }
 
         private static AlienEntityView BuildView(Guid128 id, VoxelEntityData data)
@@ -230,7 +230,6 @@ namespace Caelix.Tests
                 EntityId = id,
                 LocalToWorld = RigidTransform.identity,
                 WorldToLocal = float4x4.identity,
-                Sectors = data.sectors,
                 Data = data,
                 WorldAabbMin = new float3(-512f),
                 WorldAabbMax = new float3(512f)

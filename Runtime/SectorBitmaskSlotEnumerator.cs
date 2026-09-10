@@ -8,7 +8,7 @@ namespace Caelix
     /// A value selected by a slot's per-brick <see cref="BrickBitmask"/>, together with its block
     /// position inside the sector.
     /// </summary>
-    public struct SectorBitmaskSlotIterator<T> where T : unmanaged
+    public struct BrickSlotEntry<T> where T : unmanaged
     {
         public T value;
         public int3 position;
@@ -36,7 +36,7 @@ namespace Caelix
     /// (PhysicsInfo slot, key mask) drives the physics tests.
     /// </remarks>
     [BurstCompile]
-    public unsafe struct SectorBitmaskSlotEnumerator<T> where T : unmanaged
+    internal unsafe struct SectorBitmaskSlotEnumerator<T> where T : unmanaged
     {
         private SectorNonEmptyBrickEnumerator allocatedBricks;
         private readonly T* slotData;
@@ -47,7 +47,7 @@ namespace Caelix
         private int nextWordIndex;
         private int currentWordBase;
         private int3 brickBlockOrigin;
-        private SectorBitmaskSlotIterator<T> current;
+        private BrickSlotEntry<T> current;
 
         /// <summary>
         /// Constructs an enumerator over <paramref name="slotId"/>'s bitmap-selected values.
@@ -115,7 +115,7 @@ namespace Caelix
                 remainingBits &= remainingBits - 1ul;
 
                 int voxelIndex = currentWordBase + bitInWord;
-                current = new SectorBitmaskSlotIterator<T>
+                current = new BrickSlotEntry<T>
                 {
                     value = currentBrick[voxelIndex],
                     position = brickBlockOrigin + new int3(
@@ -161,7 +161,7 @@ namespace Caelix
             current = default;
         }
 
-        public SectorBitmaskSlotIterator<T> Current
+        public BrickSlotEntry<T> Current
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => current;
@@ -196,7 +196,7 @@ namespace Caelix
         private ulong remainingBits;
         private int nextWordIndex;
         private int currentWordBase;
-        private SectorBitmaskSlotIterator<T> current;
+        private BrickSlotEntry<T> current;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public BrickBitmaskSlotEnumerator(T* brickData, ulong* brickBitmap, int3 blockOrigin)
@@ -227,7 +227,7 @@ namespace Caelix
             remainingBits &= remainingBits - 1ul;
 
             int voxelIndex = currentWordBase + bitInWord;
-            current = new SectorBitmaskSlotIterator<T>
+            current = new BrickSlotEntry<T>
             {
                 value = brickData[voxelIndex],
                 position = blockOrigin + new int3(
@@ -239,7 +239,7 @@ namespace Caelix
             return true;
         }
 
-        public SectorBitmaskSlotIterator<T> Current
+        public BrickSlotEntry<T> Current
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => current;
@@ -249,7 +249,7 @@ namespace Caelix
         public BrickBitmaskSlotEnumerator<T> GetEnumerator() => this;
     }
 
-    public unsafe partial struct Sector
+    internal unsafe partial struct Sector
     {
         /// <summary>Enumerates values selected by <paramref name="slotId"/>'s bitmap aux.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

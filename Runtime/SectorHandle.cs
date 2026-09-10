@@ -13,7 +13,7 @@ namespace Caelix
     /// Internally stores a Sector pointer.
     /// </summary>
     [BurstCompile]
-    public unsafe struct SectorHandle
+    internal unsafe struct SectorHandle
     {
         [NativeDisableUnsafePtrRestriction]
         private Sector* _ptr;
@@ -167,7 +167,7 @@ namespace Caelix
     }
 
     [BurstCompile]
-    public unsafe struct SectorNeighborHandles
+    internal unsafe struct SectorNeighborHandles
     {
         [NativeDisableUnsafePtrRestriction]
         public SectorHandle* Neighbors;

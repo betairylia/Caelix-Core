@@ -17,7 +17,7 @@ namespace Caelix
     /// <see cref="BrickBatchApplier"/>; the members here are the per-brick primitives those two
     /// use, and are internal because nothing outside Caelix-Core names a sector.
     /// </summary>
-    public unsafe partial struct Sector
+    internal unsafe partial struct Sector
     {
         /// <summary>
         /// Exact number of bytes <see cref="WriteReplicatedBrick"/> emits for one ALLOCATED brick

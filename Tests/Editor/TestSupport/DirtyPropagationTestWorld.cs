@@ -17,7 +17,7 @@ namespace Caelix.Tests.TestSupport
 
         public VoxelEntityData Data => entity.Data;
 
-        public SectorHandle Center => entity.SectorAt(new int3(0, 0, 0));
+        internal SectorHandle Center => entity.SectorAt(new int3(0, 0, 0));
 
         public DirtyPropagationTestWorld AddSector(int3 sectorPos)
         {
@@ -42,7 +42,7 @@ namespace Caelix.Tests.TestSupport
             entity.Data.PropagateDirtyFlags(flags).Complete();
         }
 
-        public SectorHandle SectorAt(int3 sectorPos)
+        internal SectorHandle SectorAt(int3 sectorPos)
         {
             return entity.SectorAt(sectorPos);
         }

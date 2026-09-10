@@ -21,6 +21,10 @@ namespace Caelix
     /// <see cref="Capacity"/> tracks the high water mark of assigned IDs, and
     /// the min-heap free list ensures reused IDs come from the low end so
     /// <see cref="MinimumCapacity"/> stays as small as possible.
+    ///
+    /// Public on purpose: it is a sparse id table over a 16-cubed block of bricks, and the
+    /// ray-query renderer uses it for its render groups, which have the same extent. It names
+    /// no sector type in its surface.
     /// </remarks>
     [BurstCompile]
     public unsafe struct SparseBrickIdTable

@@ -23,7 +23,7 @@ namespace Caelix
     /// authoring tool (Caelix), the physics slot generation pass, the voxel collision manifold and
     /// the brick overlap query (Caelix.Physics).
     /// </remarks>
-    public unsafe struct SectorNonEmptyBrickEnumerator
+    internal unsafe struct SectorNonEmptyBrickEnumerator
     {
         /// <summary>One allocated brick: its absolute index in the sector and its shared brick id.</summary>
         public readonly struct BrickRef
@@ -85,7 +85,7 @@ namespace Caelix
         }
     }
 
-    public unsafe partial struct Sector
+    internal unsafe partial struct Sector
     {
         /// <summary>Iterates this sector's allocated bricks; see <see cref="SectorNonEmptyBrickEnumerator"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

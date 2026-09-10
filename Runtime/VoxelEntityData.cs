@@ -18,8 +18,8 @@ namespace Caelix
         /// Key is the sector position in sector-space coordinates.
         /// </summary>
         // public Dictionary<Vector3Int, Sector> sectors = new Dictionary<Vector3Int, Sector>();
-        public SharedHashMap<int3, SectorHandle> sectors;
-        public SharedHashMap<int3, SectorNeighborHandles> sectorNeighbors;
+        internal SharedHashMap<int3, SectorHandle> sectors;
+        internal SharedHashMap<int3, SectorNeighborHandles> sectorNeighbors;
         // public NativeQueue<int3> sectorsToRemove;
 
         /// <summary>
@@ -88,7 +88,7 @@ namespace Caelix
         /// <summary>
         /// Helper to get sector block position from sector position.
         /// </summary>
-        public static int3 GetSectorBlockPos(int3 sectorPos)
+        internal static int3 GetSectorBlockPos(int3 sectorPos)
         {
             return sectorPos * Sector.SECTOR_SIZE_IN_BLOCKS;
         }
@@ -149,7 +149,7 @@ namespace Caelix
         /// <summary>
         /// Adds an empty sector at the specified position.
         /// </summary>
-        public void AddEmptySectorAt(int3 pos)
+        internal void AddEmptySectorAt(int3 pos)
         {
             AddSectorAt(pos, SectorHandle.AllocEmpty());
         }
@@ -157,7 +157,7 @@ namespace Caelix
         /// <summary>
         /// Copies a sector and adds it at the specified position.
         /// </summary>
-        public void ShallowCopyAndAddSectorAt(int3 pos, Sector sector)
+        internal void ShallowCopyAndAddSectorAt(int3 pos, Sector sector)
         {
             // Allocate memory for the Sector struct itself
             Sector* sectorPtr = (Sector*)UnsafeUtility.Malloc(
@@ -183,7 +183,7 @@ namespace Caelix
         /// marks them, and the server no longer diffs sector sets per connection. A loader that
         /// already marks the same bits (<c>WorldLoader</c>) just marks them twice, which is free.
         /// </remarks>
-        public void AddSectorAt(int3 pos, SectorHandle sector)
+        internal void AddSectorAt(int3 pos, SectorHandle sector)
         {
             // Entity topology is mutated on the main thread; jobs only use copies of the handles.
             sector = sector.WithInstanceId(System.Threading.Interlocked.Increment(ref nextSectorInstanceId));
@@ -247,7 +247,7 @@ namespace Caelix
         /// Every allocated brick of the sector is published as a <see cref="ChangeKind.Removed"/>
         /// change first: once the storage is freed, a scan of what is left cannot discover it.
         /// </remarks>
-        public bool RemoveSectorAt(int3 pos)
+        internal bool RemoveSectorAt(int3 pos)
         {
             if (!sectors.ContainsKey(pos))
             {
