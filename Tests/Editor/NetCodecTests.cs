@@ -460,20 +460,29 @@ namespace Caelix.Tests
         }
 
         [Test]
-        public void Batch_ZeroSlotUpdateCreatesNoSector()
+        public void Batch_ZeroSlotUpdateCreatesNoSectorAndInvalidatesNothing()
         {
             var data = new VoxelEntityData(Allocator.Persistent);
             try
             {
+                // A neighbour sector with one brick on the face the empty key would touch. If the
+                // zero-slot record created and then freed a sector, RemoveSectorAt would mark this
+                // brick GeometryWithLocalNeighbor.
+                var neighbourKey = new int3(15, 4, 5);
+                data.SetBlock(BrickKey.ToBlockOrigin(neighbourKey), new Block(0x8001));
+                data.ClearDirtyFlags();
+
                 var writer = new NetMessageWriter();
-                writer.Write(new int3(3, 4, 5));
+                writer.Write(new int3(16, 4, 5));
                 writer.Write((byte)BrickOp.Update);
                 writer.Write((byte)0);
 
                 Assert.That(ApplyBatch(in data, writer.AsSpan().ToArray(), 1),
                     Is.EqualTo(ReplicatedBrickBatchError.None));
-                Assert.That(data.sectors.Count, Is.Zero, "a no-op record must not leave an empty sector behind");
+                Assert.That(data.sectors.Count, Is.EqualTo(1), "a no-op record must not create a sector");
+                Assert.That(data.sectors.ContainsKey(new int3(1, 0, 0)), Is.False);
                 Assert.That(data.ChangeCount, Is.Zero);
+                Assert.That(DirtyAt(data, neighbourKey), Is.Zero, "a no-op record must not invalidate neighbours");
             }
             finally
             {

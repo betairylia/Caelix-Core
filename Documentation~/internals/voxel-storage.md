@@ -36,6 +36,25 @@ The Block slot contains the visible voxel value. In this revision `Block.data`
 is a `ushort` (16 bits). Metadata lives in a separate slot. Empty Block means
 `data == 0`. Keep variable-length gameplay data outside voxel records.
 
+## Application-wide slot definitions
+
+Maintainer contract, agreed 2026-09-10: each slot id has one application-wide
+meaning, binary layout and stride (bytes per voxel). Define these during initial
+application setup. Mods may contribute definitions during that setup; all
+definitions must be fixed before worlds are created or loaded and clients connect.
+Once defined, a slot cannot change its meaning, layout or stride during the run.
+
+The same definition applies to every world, entity, sector and brick, on both
+server and client. Freeing or recreating storage does not reset it. Changing a
+slot's stride violates the contract and has undefined behavior; callers must not
+depend on a replacement or receive-flush boundary accepting a different stride.
+Data from another slot schema requires explicit conversion before use.
+
+This is an application contract at this stage. Core does not yet provide a
+frozen app-level slot registry or comprehensive validation against it. Existing
+storage and replication stride checks remain useful diagnostics, but do not
+establish or redefine a slot's application-wide meaning.
+
 ## Coordinates and IDs
 
 ### Experimental packed scene materials

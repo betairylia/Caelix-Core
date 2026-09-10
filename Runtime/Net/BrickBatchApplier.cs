@@ -390,6 +390,11 @@ namespace Caelix.Net
                 int length = message.Length;
                 int offset = 0;
 
+                if (length < 0 || message.BrickCount < 0)
+                {
+                    return ReplicatedBrickBatchError.InvalidOp;
+                }
+
                 for (int r = 0; r < message.BrickCount; r++)
                 {
                     if (length - offset < BrickReplication.RecordHeaderBytes)
@@ -415,6 +420,14 @@ namespace Caelix.Net
 
                         int slotCount = payload[offset];
                         offset += 1;
+                        if (slotCount == 0)
+                        {
+                            // A zero-slot Update is a no-op by contract. Dropping it HERE, before
+                            // it becomes a record, keeps it from creating a work item, a sector
+                            // for a key nobody fills, and the boundary invalidation that freeing
+                            // that empty sector would cause.
+                            continue;
+                        }
 
                         int3 sectorPos = SectorKeys.ToSectorPos(key);
                         for (int s = 0; s < slotCount; s++)
