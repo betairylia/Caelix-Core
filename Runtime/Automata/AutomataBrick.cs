@@ -3,6 +3,7 @@ using Unity.Mathematics;
 
 namespace Caelix
 {
+    // TODO: Lazy resolve except center?
     /// <summary>
     /// One brick of automata work: reads over the 27-brick window, writes into the center brick.
     /// </summary>
