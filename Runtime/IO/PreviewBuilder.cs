@@ -1,6 +1,7 @@
 using Unity.Burst;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Mathematics;
 
 namespace Caelix.IO
 {
@@ -102,6 +103,25 @@ namespace Caelix.IO
         public static void Build(Sector* sector, uint[] dst)
         {
             fixed (uint* p = dst) Build(sector, p);
+        }
+
+        /// <summary>
+        /// Builds the preview blob of one REGION of an entity, addressed by region position rather
+        /// than by storage. Never allocates.
+        /// </summary>
+        /// <returns>
+        /// False (and <paramref name="dst"/> untouched) when the entity holds no region there.
+        /// </returns>
+        public static bool Build(in VoxelEntityData data, int3 regionPos, uint[] dst)
+        {
+            VoxelEntityData local = data;
+            if (!local.sectors.TryGetValue(regionPos, out SectorHandle handle) || handle.IsNull)
+            {
+                return false;
+            }
+
+            Build(handle.Ptr, dst);
+            return true;
         }
     }
 }

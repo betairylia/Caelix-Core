@@ -154,12 +154,39 @@ propagation. `VoxelEntityData.RefreshNonEmptyMask()` uses Geometry require-updat
 flags when an aux buffer already exists. Merely calling it after a raw write,
 without the propagation phase, does not guarantee a changed mask is rebuilt.
 
+## Regions and automata access
+
+A `VoxelRegion` is the residency and generation unit: a fixed-size block box of one
+entity, in entity-local coordinates, sized `VoxelRegion.SizeInBlocks` per axis.
+Never hardcode that size. A generator calls `VoxelRegion.Create`, fills the
+detached region from jobs, and hands it to `VoxelEntityData.AttachRegion`, which
+takes ownership and announces every brick it brought. `TryOpenRegion` returns an
+attached view for in-place writes instead. `RemoveRegion` frees one.
+`EnsureRegion`, `HasRegion`, `RegionCount`, `GetRegionPositions` and
+`TryGetStorageBounds` describe residency, not content: a region contributes its
+whole box to the bounds even when one brick in it is allocated.
+
+`AutomataBrick` is one brick of automata work, opened by
+`VoxelEntityData.OpenAutomataBrick(key)`. Its phase rule: reads see the FRONT
+buffer, which holds the tick's start state, and writes land in the pending buffer.
+Reads span the 27-brick window `Origin - 8 .. Origin + 15` per axis; writes are
+restricted to the center brick, which is what keeps bricks independent. The stage
+brackets its work with `BeginAutomataWrites` (opens the pending buffer of every
+region that has require-update flags) and `EndAutomataWrites` (commits and
+advances the storage epoch). Opening a brick never allocates; writing into one may.
+
+The sector is the backend of both. A region wraps one sector, an automata brick
+wraps a sector handle plus its neighbour handles, and no part of either API names
+a sector or a sector-local coordinate.
+
 ## Implementation and validation
 
 - [Sector constants and ownership](../../Runtime/Sector.cs)
 - [Brick coordinate map](../../Runtime/SparseBrickIdTable.cs)
 - [Slot storage and snapshot write selection](../../Runtime/Sector.Slots.cs)
 - [Entity storage](../../Runtime/VoxelEntityData.cs), [shared maps](../../Runtime/SharedHashMap.cs)
+- [Regions](../../Runtime/VoxelRegion.cs), [region API](../../Runtime/VoxelEntityData.Regions.cs)
+- [Automata brick](../../Runtime/Automata/AutomataBrick.cs), [automata phase](../../Runtime/VoxelEntityData.Automata.cs)
 - [Occupancy refresh](../../Runtime/VoxelEntityData.OccupancyMask.cs)
 - [Storage tests](../../Tests/Editor/SectorStorageTests.cs), [snapshot tests](../../Tests/Editor/SectorSnapshotTests.cs), [coordinate tests](../../Tests/Editor/CoordinateAndNeighborhoodTests.cs)
 
