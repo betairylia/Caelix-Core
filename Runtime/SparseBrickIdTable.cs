@@ -22,21 +22,24 @@ namespace Caelix
     /// the min-heap free list ensures reused IDs come from the low end so
     /// <see cref="MinimumCapacity"/> stays as small as possible.
     ///
-    /// Public on purpose: it is a sparse id table over a 16-cubed block of bricks, and the
-    /// ray-query renderer uses it for its render groups, which have the same extent. It names
-    /// no sector type in its surface.
+    /// Public on purpose: a sparse id table over up to 32768 slots. Sectors use 4096 slots in the
+    /// storage's 16-cubed layout; the ray-query renderer sizes one per render group and indexes it
+    /// with the group's own flat index. It names no sector type in its surface.
     /// </remarks>
     [BurstCompile]
     public unsafe struct SparseBrickIdTable
     {
-        /// <summary>Number of brick slots in the table (SIZE_IN_BRICKS^3).</summary>
+        /// <summary>Number of brick slots a sector's table has (SIZE_IN_BRICKS^3).</summary>
         public const int CAPACITY = Sector.BRICKS_IN_SECTOR;
+
+        /// <summary>Largest slot count a table may have: ids are shorts, so slots are 0..32767.</summary>
+        public const int MAX_SLOT_COUNT = short.MaxValue + 1;
 
         /// <summary>Sentinel value for an unallocated brick slot.</summary>
         public const short EMPTY = -1;
 
         /// <summary>
-        /// Position → brickID lookup, sized <see cref="CAPACITY"/>. <see cref="EMPTY"/> for invalid bricks.
+        /// Position → brickID lookup, sized <see cref="SlotCount"/>. <see cref="EMPTY"/> for invalid bricks.
         /// Use <see cref="Sector.ToBrickIdx"/> / <see cref="Sector.ToBrickPos"/> for conversion.
         /// </summary>
         [NativeDisableUnsafePtrRestriction]
@@ -46,11 +49,14 @@ namespace Caelix
         [NativeDisableUnsafePtrRestriction]
         private short* _freelist;
 
-        // [0] capacity (high water mark), [1] freelist count, [2] active brick count.
+        // [0] capacity (high water mark), [1] freelist count, [2] active brick count, [3] slot count.
         [NativeDisableUnsafePtrRestriction]
         private int* _meta;
 
         private Allocator _allocator;
+
+        /// <summary>Number of slots this table was allocated with: the length of <see cref="indices"/>.</summary>
+        public int SlotCount { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _meta[3]; }
 
         /// <summary>Current high-water mark of assigned IDs. New non-recycled IDs equal this value.</summary>
         public int Capacity { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _meta[0]; }
@@ -84,21 +90,37 @@ namespace Caelix
         }
 
         /// <summary>
-        /// Allocates a new sparse brick id table.
+        /// Allocates a new sparse brick id table over a sector's <see cref="CAPACITY"/> slots.
         /// </summary>
-        public static SparseBrickIdTable New(Allocator allocator)
+        public static SparseBrickIdTable New(Allocator allocator) => New(CAPACITY, allocator);
+
+        /// <summary>
+        /// Allocates a new sparse brick id table over <paramref name="slotCount"/> slots.
+        /// </summary>
+        /// <param name="slotCount">
+        /// Number of addressable slots, 1..<see cref="MAX_SLOT_COUNT"/>. The upper bound is what a
+        /// short brick id can name.
+        /// </param>
+        public static SparseBrickIdTable New(int slotCount, Allocator allocator)
         {
+            if (slotCount < 1 || slotCount > MAX_SLOT_COUNT)
+            {
+                throw new System.ArgumentOutOfRangeException(
+                    nameof(slotCount), slotCount, $"slotCount must be in 1..{MAX_SLOT_COUNT}.");
+            }
+
             var t = new SparseBrickIdTable
             {
-                indices   = (short*)UnsafeUtility.Malloc(CAPACITY * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
-                _freelist = (short*)UnsafeUtility.Malloc(CAPACITY * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
-                _meta     = (int*)UnsafeUtility.Malloc(3 * sizeof(int),            UnsafeUtility.AlignOf<int>(),   allocator),
+                indices   = (short*)UnsafeUtility.Malloc(slotCount * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
+                _freelist = (short*)UnsafeUtility.Malloc(slotCount * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
+                _meta     = (int*)UnsafeUtility.Malloc(4 * sizeof(int),             UnsafeUtility.AlignOf<int>(),   allocator),
                 _allocator = allocator,
             };
-            for (int i = 0; i < CAPACITY; i++) t.indices[i] = EMPTY;
+            for (int i = 0; i < slotCount; i++) t.indices[i] = EMPTY;
             t._meta[0] = 0;
             t._meta[1] = 0;
             t._meta[2] = 0;
+            t._meta[3] = slotCount;
             return t;
         }
 
@@ -108,33 +130,35 @@ namespace Caelix
         /// </summary>
         public SparseBrickIdTable Clone(Allocator allocator)
         {
+            int slotCount = SlotCount;
             var c = new SparseBrickIdTable
             {
-                indices   = (short*)UnsafeUtility.Malloc(CAPACITY * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
-                _freelist = (short*)UnsafeUtility.Malloc(CAPACITY * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
-                _meta     = (int*)UnsafeUtility.Malloc(3 * sizeof(int),            UnsafeUtility.AlignOf<int>(),   allocator),
+                indices   = (short*)UnsafeUtility.Malloc(slotCount * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
+                _freelist = (short*)UnsafeUtility.Malloc(slotCount * sizeof(short), UnsafeUtility.AlignOf<short>(), allocator),
+                _meta     = (int*)UnsafeUtility.Malloc(4 * sizeof(int),             UnsafeUtility.AlignOf<int>(),   allocator),
                 _allocator = allocator,
             };
-            UnsafeUtility.MemCpy(c.indices, indices, CAPACITY * sizeof(short));
+            UnsafeUtility.MemCpy(c.indices, indices, slotCount * sizeof(short));
             int freeCount = _meta[1];
             if (freeCount > 0)
                 UnsafeUtility.MemCpy(c._freelist, _freelist, freeCount * sizeof(short));
-            UnsafeUtility.MemCpy(c._meta, _meta, 3 * sizeof(int));
+            UnsafeUtility.MemCpy(c._meta, _meta, 4 * sizeof(int));
             return c;
         }
 
         /// <summary>
         /// Overwrites this table's contents with <paramref name="other"/>'s without reallocating.
         /// Both tables must already be allocated (<see cref="IsCreated"/>); buffer sizes always match.
+        /// Both tables must have the same <see cref="SlotCount"/>.
         /// Useful for double-buffered snapshots that reuse a persistent back-buffer each tick.
         /// </summary>
         public void CopyFrom(in SparseBrickIdTable other)
         {
-            UnsafeUtility.MemCpy(indices, other.indices, CAPACITY * sizeof(short));
+            UnsafeUtility.MemCpy(indices, other.indices, other.SlotCount * sizeof(short));
             int freeCount = other._meta[1];
             if (freeCount > 0)
                 UnsafeUtility.MemCpy(_freelist, other._freelist, freeCount * sizeof(short));
-            UnsafeUtility.MemCpy(_meta, other._meta, 3 * sizeof(int));
+            UnsafeUtility.MemCpy(_meta, other._meta, 4 * sizeof(int));
         }
 
         /// <summary>Frees all unmanaged memory owned by this table.</summary>
@@ -156,8 +180,18 @@ namespace Caelix
         /// <param name="exceedsCapacity">True iff the assigned ID is &gt;= the previous <see cref="Capacity"/> (no reuse possible).</param>
         /// <returns>True if a new ID was assigned, False if the brick already existed.</returns>
         public bool AddBrick(int3 position, out int brickID, out bool exceedsCapacity)
+            => AddBrickAt(Idx(position), out brickID, out exceedsCapacity);
+
+        /// <summary>
+        /// Marks the brick in <paramref name="slot"/> as valid and assigns it a unique ID.
+        /// </summary>
+        /// <param name="slot">Flat slot index, 0..<see cref="SlotCount"/>-1.</param>
+        /// <param name="brickID">The assigned (or pre-existing) brick ID.</param>
+        /// <param name="exceedsCapacity">True iff the assigned ID is &gt;= the previous <see cref="Capacity"/> (no reuse possible).</param>
+        /// <returns>True if a new ID was assigned, False if the brick already existed.</returns>
+        public bool AddBrickAt(int slot, out int brickID, out bool exceedsCapacity)
         {
-            int idx = Idx(position);
+            int idx = slot;
             short existing = indices[idx];
             if (existing != EMPTY)
             {
@@ -199,9 +233,17 @@ namespace Caelix
         /// No-op if the brick is already invalid.
         /// </summary>
         /// <returns>Removed ID</returns>
-        public int RemoveBrick(int3 position)
+        public int RemoveBrick(int3 position) => RemoveBrickAt(Idx(position));
+
+        /// <summary>
+        /// Marks the brick in <paramref name="slot"/> as invalid; its ID becomes available for reuse.
+        /// No-op if the slot is already invalid.
+        /// </summary>
+        /// <param name="slot">Flat slot index, 0..<see cref="SlotCount"/>-1.</param>
+        /// <returns>Removed ID</returns>
+        public int RemoveBrickAt(int slot)
         {
-            int idx = Idx(position);
+            int idx = slot;
             short id = indices[idx];
             if (id == EMPTY) return EMPTY;
             indices[idx] = EMPTY;
@@ -218,9 +260,10 @@ namespace Caelix
         {
             // Brick IDs never get rearranged, so the minimum capacity is determined
             // by the highest-valued currently-active ID. Scan the indices table —
-            // bounded by CAPACITY (4096) so this is cheap.
+            // bounded by SlotCount (4096 for a sector) so this is cheap.
             int max = -1;
-            for (int i = 0; i < CAPACITY; i++)
+            int slotCount = SlotCount;
+            for (int i = 0; i < slotCount; i++)
             {
                 short v = indices[i];
                 if (v > max) max = v;

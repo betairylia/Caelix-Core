@@ -53,6 +53,55 @@ namespace Caelix.Tests
             Assert.That(SparseBrickIdTable.CAPACITY, Is.EqualTo(Sector.BRICKS_IN_SECTOR));
         }
 
+        [Test]
+        public void New_WithSlotCount_SizesTheTable()
+        {
+            var t = SparseBrickIdTable.New(512, Allocator.Persistent);
+            try
+            {
+                Assert.That(t.SlotCount, Is.EqualTo(512));
+                Assert.That(t.Capacity, Is.EqualTo(0));
+                for (int i = 0; i < 512; i++)
+                    Assert.That(t.indices[i], Is.EqualTo(SparseBrickIdTable.EMPTY));
+            }
+            finally
+            {
+                t.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The slot-based API is what the ray-query renderer uses: it indexes the table with its
+        /// own group-local brick index, which no sector layout can produce.
+        /// </summary>
+        [Test]
+        public void SlotApi_AddRemoveRoundTrip()
+        {
+            var t = SparseBrickIdTable.New(512, Allocator.Persistent);
+            try
+            {
+                Assert.That(t.AddBrickAt(511, out int id, out bool exceeds), Is.True);
+                Assert.That(id, Is.EqualTo(0));
+                Assert.That(exceeds, Is.True);
+
+                Assert.That(t.AddBrickAt(511, out int again, out bool exceedsAgain), Is.False);
+                Assert.That(again, Is.EqualTo(0));
+                Assert.That(exceedsAgain, Is.False);
+
+                Assert.That(t.RemoveBrickAt(511), Is.EqualTo(0));
+                Assert.That(t.Count, Is.EqualTo(0));
+
+                Assert.That(t.AddBrickAt(3, out int reused, out bool reusedExceeds), Is.True);
+                Assert.That(reused, Is.EqualTo(0), "the freed id must come back");
+                Assert.That(reusedExceeds, Is.False);
+                Assert.That(t.Capacity, Is.EqualTo(1));
+            }
+            finally
+            {
+                t.Dispose();
+            }
+        }
+
         // ---------- AddBrick ----------
 
         [Test]
