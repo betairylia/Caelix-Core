@@ -1,4 +1,4 @@
-#define CAELIX_PACKED_SCENE_COLOR
+// #define CAELIX_PACKED_SCENE_COLOR
 
 namespace Caelix
 {
