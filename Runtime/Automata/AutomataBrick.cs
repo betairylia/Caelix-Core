@@ -113,6 +113,51 @@ namespace Caelix
             center.SetSlot(slot, sectorLocal.x, sectorLocal.y, sectorLocal.z, value);
         }
 
+        /// <summary>
+        /// Writes a block inside the CENTER brick raising exactly <paramref name="simulationFlags"/>
+        /// (plus engine bookkeeping). An automaton names its own channel here; the
+        /// <see cref="AutomataDefaults"/> tables are not consulted.
+        /// </summary>
+        public void SetBlock(int3 blockPos, Block block, BrickUpdateFlags simulationFlags)
+            => SetSlot(SectorSlotId.Block, blockPos, block, simulationFlags);
+
+        /// <summary>
+        /// Writes one slot value inside the CENTER brick raising exactly
+        /// <paramref name="simulationFlags"/> (plus engine bookkeeping); see
+        /// <see cref="SetBlock(int3, Block, BrickUpdateFlags)"/>.
+        /// </summary>
+        public void SetSlot<T>(SectorSlotId slot, int3 blockPos, T value, BrickUpdateFlags simulationFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            CheckInCenterBrick(blockPos);
+            if (center.IsNull)
+            {
+                CheckHasCenter();
+                return;
+            }
+
+            int3 sectorLocal = blockPos - centerSectorPos * Sector.SECTOR_SIZE_IN_BLOCKS;
+            center.SetSlot(slot, sectorLocal.x, sectorLocal.y, sectorLocal.z, value, simulationFlags);
+        }
+
+        /// <summary>
+        /// Asks for the center brick to be scheduled again next tick on the given simulation
+        /// channels, without changing any voxel. Raises the brick's source dirty state (never the
+        /// require-update flags the current tick is consuming); ordinary propagation converts it into
+        /// next-tick work on this brick and its neighbours. No geometry, replication or allocation
+        /// bookkeeping is raised, and an unallocated center brick stays unallocated.
+        /// </summary>
+        public void SetDirty(BrickUpdateFlags simulationFlags)
+        {
+            if (center.IsNull)
+            {
+                CheckHasCenter();
+                return;
+            }
+
+            center.MarkBrickSimulationDirty(SectorKeys.ToBrickIdx(Key), simulationFlags);
+        }
+
         [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
         private void CheckInCenterBrick(int3 blockPos)
         {

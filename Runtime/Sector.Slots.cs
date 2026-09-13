@@ -522,13 +522,121 @@ namespace Caelix
         }
 
         // ---- Per-voxel writes ------------------------------------------------------------------
+        //
+        // Two setter bodies share the storage work (TryPrepareWrite / CommitWrite) and differ only
+        // in where the simulation bits come from:
+        //   - the DEFAULT body asks AutomataDefaults (the application's block / slot tables);
+        //   - the EXPLICIT body takes the caller's mask and never touches those tables.
+        // Overload resolution picks the body at compile time, so an explicit write cannot fall into
+        // the classifier by accident. Engine bookkeeping (geometry, allocation) is added by the
+        // engine in both bodies and cannot be suppressed by a caller mask.
 
+        /// <summary>Writes a block. Simulation bits come from <see cref="AutomataDefaults"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetBlock(int x, int y, int z, Block block)
             => SetVoxelSlot(SectorSlotId.Block, x, y, z, block);
 
+        /// <summary>Writes a block raising exactly the given simulation bits (plus engine bookkeeping).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetBlock(int x, int y, int z, Block block, BrickUpdateFlags simulationFlags)
+            => SetVoxelSlot(SectorSlotId.Block, x, y, z, block, simulationFlags);
+
+        /// <summary>
+        /// Writes one slot value. Simulation bits come from <see cref="AutomataDefaults"/>: the
+        /// block table (previous and replacement id) for the Block slot, the slot table otherwise.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetVoxelSlot<T>(SectorSlotId slotId, int x, int y, int z, T value)
+            where T : unmanaged, IEquatable<T>
+        {
+            if (!TryPrepareWrite(slotId, x, y, z, value, out VoxelWrite write, out T previous))
+            {
+                return;
+            }
+
+            ushort simulation = slotId == SectorSlotId.Block
+                ? AutomataDefaults.BlockWriteFlags(BlockIdOf(ref previous), BlockIdOf(ref value))
+                : AutomataDefaults.SlotWriteFlags((int)slotId);
+
+            CommitWrite(slotId, in write, x, y, z, value, (ushort)(MandatoryFlags(slotId) | simulation));
+        }
+
+        /// <summary>
+        /// Writes one slot value raising exactly <paramref name="simulationFlags"/> (masked to
+        /// <see cref="BrickUpdateFlags.AutomataMask"/>) plus engine bookkeeping. Never consults
+        /// <see cref="AutomataDefaults"/>. An unchanged value still writes nothing; use the
+        /// automata brick's <c>SetDirty</c> for a scheduling request without a data change.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetVoxelSlot<T>(SectorSlotId slotId, int x, int y, int z, T value, BrickUpdateFlags simulationFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            CheckSimulationMask(simulationFlags);
+            if (!TryPrepareWrite(slotId, x, y, z, value, out VoxelWrite write, out T _))
+            {
+                return;
+            }
+
+            ushort simulation = (ushort)(simulationFlags & BrickUpdateFlags.AutomataMask);
+            CommitWrite(slotId, in write, x, y, z, value, (ushort)(MandatoryFlags(slotId) | simulation));
+        }
+
+        /// <summary>
+        /// Where a prepared write lands. Holds the slot-table entry (stable: the table itself never
+        /// moves) and indices, never a voxel pointer, because the slot's buffer can be reallocated
+        /// between preparing and committing by another brick's allocation.
+        /// </summary>
+        private struct VoxelWrite
+        {
+            public SectorSlotStorage* Slot;
+            public int BrickIdx;
+            public int VoxelIdx;
+            public short Bid;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static ushort MandatoryFlags(SectorSlotId slotId)
+        {
+            return slotId == SectorSlotId.Block
+                ? (ushort)DirtyPropagationSettings.BlockWriteGeometryFlags
+                : (ushort)0;
+        }
+
+        /// <summary>The block id behind a Block-slot value. Only called when <c>slotId == Block</c>, where <typeparamref name="T"/> is <see cref="Block"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static ushort BlockIdOf<T>(ref T value) where T : unmanaged
+        {
+            CheckBlockSized<T>();
+            return UnsafeUtility.As<T, Block>(ref value).id;
+        }
+
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void CheckBlockSized<T>() where T : unmanaged
+        {
+            if (UnsafeUtility.SizeOf<T>() != UnsafeUtility.SizeOf<Block>())
+            {
+                throw new InvalidOperationException("The Block slot takes Block-sized values only.");
+            }
+        }
+
+        [System.Diagnostics.Conditional("ENABLE_UNITY_COLLECTIONS_CHECKS")]
+        private static void CheckSimulationMask(BrickUpdateFlags simulationFlags)
+        {
+            if ((simulationFlags & ~BrickUpdateFlags.AutomataMask) != 0)
+            {
+                throw new ArgumentException(
+                    "Only simulation bits (AutomataMask) may be passed to a voxel setter; engine bookkeeping bits are engine-owned.");
+            }
+        }
+
+        /// <summary>
+        /// Resolves the voxel, allocates the brick and the slot storage when needed, and reads the
+        /// previous value. Returns false when nothing must be written: writing the default into an
+        /// unallocated brick, or writing the value already there.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool TryPrepareWrite<T>(
+            SectorSlotId slotId, int x, int y, int z, T value, out VoxelWrite write, out T previous)
             where T : unmanaged, IEquatable<T>
         {
             ref SparseBrickIdTable targetBrickMap = ref(_snapshot_enabled ? ref _snapshot_brickMap : ref brickMap);
@@ -540,10 +648,13 @@ namespace Caelix
             ResolveVoxel(x, y, z, out int brickIdx, out int voxelIdx);
             short bid = targetBrickMap.indices[brickIdx];
 
+            write = default;
+            previous = default;
+
             // Brick does not exist, need alloc
             if (bid == BRICKID_EMPTY)
             {
-                if (value.Equals(default)) return;
+                if (value.Equals(default)) return false;
 
                 // Lock and alloc
                 AcquireSpinGate(ref _sectorAllocLock);
@@ -573,10 +684,10 @@ namespace Caelix
 
             // Check for same value
             // If slot !IsCreated, Get will return default
-            T previous = slot->Get<T>(bid, voxelIdx, UnsafeUtility.SizeOf<T>());
+            previous = slot->Get<T>(bid, voxelIdx, UnsafeUtility.SizeOf<T>());
             if (value.Equals(previous))
             {
-                return;
+                return false;
             }
 
             // Allocate the slot if not yet allocated for this sector
@@ -594,19 +705,42 @@ namespace Caelix
                 ReleaseSpinGate(ref _sectorAllocLock);
             }
 
-            // Set the data
-            BrickUpdateFlags dirtyFlags = slotId == SectorSlotId.Block
-                ? DirtyPropagationSettings.DefaultSetBlockFlags
-                : BrickUpdateFlags.GeneralAutomata;
-            MarkBrickDirty(brickIdx, dirtyFlags, GetVoxelPropagationMask(voxelIdx));
+            write.Slot = slot;
+            write.BrickIdx = brickIdx;
+            write.VoxelIdx = voxelIdx;
+            write.Bid = bid;
+            return true;
+        }
+
+        /// <summary>Marks the brick dirty with the final flags and stores the value.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void CommitWrite<T>(
+            SectorSlotId slotId, in VoxelWrite write, int x, int y, int z, T value, ushort dirtyFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            MarkBrickDirty(write.BrickIdx, (BrickUpdateFlags)dirtyFlags, GetVoxelPropagationMask(write.VoxelIdx));
 
             // Update AABB
             // TODO: Rescan AABB occasionally to handle block removal
             // TODO: Make AABB tight with current snapshot logic -- current version is correct (always superset) but may not be ideal
-            if(slotId == SectorSlotId.Block && !value.Equals(default))
+            if (slotId == SectorSlotId.Block && !value.Equals(default))
                 blockAABB.Update(new int3(x, y, z));
 
-            slot->Set(bid, voxelIdx, UnsafeUtility.SizeOf<T>(), value);
+            write.Slot->Set(write.Bid, write.VoxelIdx, UnsafeUtility.SizeOf<T>(), value);
+        }
+
+        /// <summary>
+        /// Raises simulation bits on a brick's source dirty state without changing any voxel: an
+        /// automaton's request to run again next tick. Whole-brick propagation (no changed voxel to
+        /// narrow the direction mask from); no geometry or allocation bookkeeping.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void MarkBrickSimulationDirty(int brickIdx, BrickUpdateFlags simulationFlags)
+        {
+            CheckSimulationMask(simulationFlags);
+            ushort masked = (ushort)(simulationFlags & BrickUpdateFlags.AutomataMask);
+            if (masked == 0) return;
+            MarkBrickDirty(brickIdx, (BrickUpdateFlags)masked, 0xFFFFFFFF);
         }
     }
 }

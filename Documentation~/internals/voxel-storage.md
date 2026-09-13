@@ -191,3 +191,29 @@ a sector or a sector-local coordinate.
 - [Storage tests](../../Tests/Editor/SectorStorageTests.cs), [snapshot tests](../../Tests/Editor/SectorSnapshotTests.cs), [coordinate tests](../../Tests/Editor/CoordinateAndNeighborhoodTests.cs)
 
 This page was checked against source. The documentation pass did not rerun Unity tests.
+
+## Voxel setters and simulation flags
+
+`Sector.SetVoxelSlot` has two bodies chosen by overload, sharing the storage work
+(`TryPrepareWrite`: resolve, allocate, read the previous value, early-out when
+unchanged; `CommitWrite`: mark dirty, update the AABB, store):
+
+- `SetBlock(x, y, z, block)` / `SetVoxelSlot(slot, x, y, z, value)`: simulation
+  bits come from `AutomataDefaults` — `Blocks[previous.id] | Blocks[value.id]`
+  for the Block slot, `Slots[slot]` otherwise.
+- `SetBlock(..., simulationFlags)` / `SetVoxelSlot(..., simulationFlags)`: the
+  caller's mask, masked to `BrickUpdateFlags.AutomataMask`. The tables are not
+  read on this path.
+
+Both bodies OR the engine's geometry bits (`Geometry | GeometryWithLocalNeighbor`)
+onto every changed Block write and none onto other slots; `BlockBrickAdded` still
+comes from allocation. A caller mask cannot suppress those bits, and under
+collections checks a mask with engine bits throws. The same pair of overloads is
+forwarded by `SectorHandle`, `VoxelRegion`, `VoxelEntityData` and `AutomataBrick`.
+`Sector.MarkBrickSimulationDirty` (reached through `AutomataBrick.SetDirty`) raises
+simulation bits on a brick with whole-brick propagation and no data change.
+
+`RequiredBrick.IsAllocated` records whether a collected position held storage, so
+a consumer can drop unallocated positions without opening the brick.
+`VoxelEntityData.BeginAutomataWrites(mask)` activates snapshots only in sectors
+whose require-update flags intersect the mask.

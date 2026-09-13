@@ -145,6 +145,30 @@ namespace Caelix
             Handle.SetSlot(slot, local.x, local.y, local.z, value);
         }
 
+        /// <summary>
+        /// Writes a block raising exactly <paramref name="simulationFlags"/> (plus engine
+        /// bookkeeping) instead of the <see cref="AutomataDefaults"/> rules.
+        /// </summary>
+        public void SetBlock(int3 blockPos, Block block, BrickUpdateFlags simulationFlags)
+            => SetSlot(SectorSlotId.Block, blockPos, block, simulationFlags);
+
+        /// <summary>
+        /// Writes one slot value raising exactly <paramref name="simulationFlags"/> (plus engine
+        /// bookkeeping) instead of the <see cref="AutomataDefaults"/> rules.
+        /// </summary>
+        public void SetSlot<T>(SectorSlotId slot, int3 blockPos, T value, BrickUpdateFlags simulationFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            int3 local = Local(blockPos);
+            if (Handle.IsNull)
+            {
+                CheckCreated();
+                return;
+            }
+
+            Handle.SetSlot(slot, local.x, local.y, local.z, value, simulationFlags);
+        }
+
         private int3 Local(int3 blockPos)
         {
             int3 local = blockPos - Origin;

@@ -134,16 +134,16 @@ namespace Caelix.Tests
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
-            Assert.That(scope.Data.MarkRequired(new int3(1, 0, 0), BrickUpdateFlags.GeneralAutomata), Is.True);
+            Assert.That(scope.Data.MarkRequired(new int3(1, 0, 0), BrickUpdateFlags.Automata0), Is.True);
             Assert.That(
-                scope.Data.MarkRequired(new int3(5, 5, 5), BrickUpdateFlags.GeneralAutomata), Is.False,
+                scope.Data.MarkRequired(new int3(5, 5, 5), BrickUpdateFlags.Automata0), Is.False,
                 "an unallocated brick has nothing to work on");
             Assert.That(
-                scope.Data.MarkRequired(new int3(1000, 0, 0), BrickUpdateFlags.GeneralAutomata), Is.False,
+                scope.Data.MarkRequired(new int3(1000, 0, 0), BrickUpdateFlags.Automata0), Is.False,
                 "a missing region has nothing to work on");
             Assert.That(
-                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & BrickUpdateFlags.GeneralAutomata,
-                Is.EqualTo(BrickUpdateFlags.GeneralAutomata));
+                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & BrickUpdateFlags.Automata0,
+                Is.EqualTo(BrickUpdateFlags.Automata0));
             Assert.That(scope.Data.GetRequiredFlags(new int3(1000, 0, 0)), Is.EqualTo(BrickUpdateFlags.None));
 
             // A marker on a missing region is a no-op, and creates nothing.

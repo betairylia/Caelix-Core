@@ -489,6 +489,7 @@ namespace Caelix
                         Entity = entityId,
                         Key = SectorKeys.FromSector(sectorEntry.Key, brickIdxAbs),
                         Flags = (BrickUpdateFlags)sector.brickRequireUpdateFlags[brickIdxAbs],
+                        IsAllocated = sector.brickMap.indices[brickIdxAbs] != Sector.BRICKID_EMPTY,
                         LocalToWorld = data.transform
                     });
                 }

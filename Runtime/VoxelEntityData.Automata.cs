@@ -43,13 +43,21 @@ namespace Caelix
         /// A region with no require-update flag is skipped: nothing writes into it, and the buffer
         /// copy it would need is the expensive part.
         /// </remarks>
-        public void BeginAutomataWrites()
+        public void BeginAutomataWrites() => BeginAutomataWrites(BrickUpdateFlags.All);
+
+        /// <summary>
+        /// <see cref="BeginAutomataWrites()"/> restricted to the regions whose require-update flags
+        /// intersect <paramref name="mask"/>: the stage passes the union of what its hooks consume,
+        /// so a region with geometry-only work gets no buffer copy.
+        /// </summary>
+        public void BeginAutomataWrites(BrickUpdateFlags mask)
         {
             if (!sectors.IsCreated)
             {
                 return;
             }
 
+            ushort selected = (ushort)mask;
             foreach (var kvp in sectors)
             {
                 if (kvp.Value.IsNull)
@@ -57,7 +65,7 @@ namespace Caelix
                     continue;
                 }
 
-                if (kvp.Value.Get().sectorRequireUpdateFlags > 0)
+                if ((kvp.Value.Get().sectorRequireUpdateFlags & selected) != 0)
                 {
                     kvp.Value.ActivateSnapshot();
                 }

@@ -15,26 +15,36 @@ namespace Caelix
     /// next tick). The enum names neither side, which is why it is not called <c>DirtyFlags</c>;
     /// see <see cref="BrickChange"/> for the pair and who may read which.
     /// </remarks>
+    /// <para>
+    /// Bits 0–11 are the SIMULATION bits: application-defined automata channels the engine never
+    /// interprets (an application names them, e.g. <c>Wire = Automata0</c>). Which of them a voxel
+    /// write raises is decided by the writer, or by the application's
+    /// <see cref="AutomataDefaults"/> when the writer passes no mask. Bits 12–15 are engine
+    /// bookkeeping (allocation, geometry, replication) that every Block write raises regardless.
+    /// </para>
     [Flags]
     public enum BrickUpdateFlags : ushort
     {
         None       = 0,
-        GeneralAutomata  = 1 << 0,
-        Reserved1  = 1 << 1,
-        Reserved2  = 1 << 2,
-        Reserved3  = 1 << 3,
-        Reserved4  = 1 << 4,
-        Reserved5  = 1 << 5,
-        Reserved6  = 1 << 6,
-        Reserved7  = 1 << 7,
-        Reserved8  = 1 << 8,
-        Reserved9  = 1 << 9,
-        Reserved10 = 1 << 10,
-        Reserved11 = 1 << 11,
+        Automata0  = 1 << 0,
+        Automata1  = 1 << 1,
+        Automata2  = 1 << 2,
+        Automata3  = 1 << 3,
+        Automata4  = 1 << 4,
+        Automata5  = 1 << 5,
+        Automata6  = 1 << 6,
+        Automata7  = 1 << 7,
+        Automata8  = 1 << 8,
+        Automata9  = 1 << 9,
+        Automata10 = 1 << 10,
+        Automata11 = 1 << 11,
         BlockBrickAdded = 1 << 12,
         BlockBrickRemoved = 1 << 13,
         GeometryWithLocalNeighbor = 1 << 14,
         Geometry = 1 << 15,
+
+        /// <summary>Every application simulation bit (bits 0–11).</summary>
+        AutomataMask = 0x0FFF,
         All        = 0xFFFF,
     }
 
@@ -45,8 +55,12 @@ namespace Caelix
         public const ushort DirtyFlagsPropagateToNeighbor    = (ushort)0b0100_1111_1111_1111u;
         public const ushort DirtyFlagsCanAllocateLocalBricks = (ushort)0b0000_1111_1111_1111u;
 
-        public const BrickUpdateFlags DefaultSetBlockFlags = (
-            BrickUpdateFlags.GeneralAutomata |
+        /// <summary>
+        /// Engine bookkeeping every changed Block write raises, whether or not the writer supplies
+        /// simulation flags. No simulation bit is part of it: those come from the writer or from
+        /// <see cref="AutomataDefaults"/>.
+        /// </summary>
+        public const BrickUpdateFlags BlockWriteGeometryFlags = (
             BrickUpdateFlags.GeometryWithLocalNeighbor |
             BrickUpdateFlags.Geometry);
 

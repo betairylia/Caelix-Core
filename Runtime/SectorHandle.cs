@@ -109,6 +109,28 @@ namespace Caelix
             _ptr->SetVoxelSlot(slotId, x, y, z, value);
         }
 
+        /// <summary>Explicit-mask block write; see <see cref="Sector.SetVoxelSlot{T}(SectorSlotId, int, int, int, T, BrickUpdateFlags)"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetBlock(int x, int y, int z, Block block, BrickUpdateFlags simulationFlags)
+        {
+            SetSlot(SectorSlotId.Block, x, y, z, block, simulationFlags);
+        }
+
+        /// <summary>Explicit-mask slot write; see <see cref="Sector.SetVoxelSlot{T}(SectorSlotId, int, int, int, T, BrickUpdateFlags)"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetSlot<T>(SectorSlotId slotId, int x, int y, int z, T value, BrickUpdateFlags simulationFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            _ptr->SetVoxelSlot(slotId, x, y, z, value, simulationFlags);
+        }
+
+        /// <summary>See <see cref="Sector.MarkBrickSimulationDirty"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void MarkBrickSimulationDirty(int brickIdx, BrickUpdateFlags simulationFlags)
+        {
+            _ptr->MarkBrickSimulationDirty(brickIdx, simulationFlags);
+        }
+
         /// <summary>
         /// Gets a pointer to a brick within the sector.
         /// </summary>

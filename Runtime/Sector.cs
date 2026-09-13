@@ -404,6 +404,9 @@ namespace Caelix
 
         private bool _snapshot_enabled;
 
+        /// <summary>True while writes land in the pending buffer (between <see cref="ActivateSnapshot"/> and <see cref="ApplySnapshot"/>).</summary>
+        public bool IsSnapshotEnabled => _snapshot_enabled;
+
         /// <summary>
         /// Activates snapshot mode for double-buffered sector updates.
         /// </summary>

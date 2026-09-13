@@ -34,7 +34,7 @@ namespace Caelix.Tests
             scope.Data.ClearRequireUpdates();
 
             var key = new int3(0, 0, 0);
-            Assert.That(scope.Data.MarkRequired(key, BrickUpdateFlags.GeneralAutomata), Is.True);
+            Assert.That(scope.Data.MarkRequired(key, BrickUpdateFlags.Automata0), Is.True);
             scope.Data.BeginAutomataWrites();
 
             AutomataBrick brick = scope.Data.OpenAutomataBrick(key);
@@ -63,7 +63,7 @@ namespace Caelix.Tests
             scope.Data.SetBlock(new int3(5, 5, 5), Solid(1));
             scope.Data.SetBlock(new int3(8, 5, 5), Solid(2));
             scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
-            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.GeneralAutomata);
+            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.Automata0);
             scope.Data.BeginAutomataWrites();
 
             AutomataBrick brick = scope.Data.OpenAutomataBrick(new int3(0, 0, 0));
@@ -97,7 +97,7 @@ namespace Caelix.Tests
             scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
-            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.GeneralAutomata);
+            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.Automata0);
             scope.Data.BeginAutomataWrites();
 
             var key = new int3(1, 1, 1);
@@ -146,7 +146,7 @@ namespace Caelix.Tests
                 {
                     Entity = SelfEntityId,
                     Key = new int3(0, 0, 0),
-                    Flags = BrickUpdateFlags.GeneralAutomata,
+                    Flags = BrickUpdateFlags.Automata0,
                     LocalToWorld = RigidTransform.identity
                 };
 

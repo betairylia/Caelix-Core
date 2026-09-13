@@ -354,6 +354,39 @@ namespace Caelix
         public void SetSlot<T>(SectorSlotId slotId, int3 pos, T value)
             where T : unmanaged, IEquatable<T>
         {
+            SectorHandle handle = SectorForWrite(pos, out int3 local);
+            handle.SetSlot(slotId, local.x, local.y, local.z, value);
+
+            // A write may allocate a brick and grow the sector's slot buffers, which moves every
+            // pointer bound into them. Advanced on every write rather than only on growth: the
+            // epoch is advisory (see StorageEpoch) and a write is a mutation-phase action anyway.
+            MarkStorageMutated();
+        }
+
+        /// <summary>
+        /// Writes a block raising exactly <paramref name="simulationFlags"/> (plus engine
+        /// bookkeeping) instead of the <see cref="AutomataDefaults"/> rules.
+        /// </summary>
+        public void SetBlock(int3 pos, Block b, BrickUpdateFlags simulationFlags)
+        {
+            SetSlot(SectorSlotId.Block, pos, b, simulationFlags);
+        }
+
+        /// <summary>
+        /// Writes one slot value raising exactly <paramref name="simulationFlags"/> (plus engine
+        /// bookkeeping) instead of the <see cref="AutomataDefaults"/> rules.
+        /// </summary>
+        public void SetSlot<T>(SectorSlotId slotId, int3 pos, T value, BrickUpdateFlags simulationFlags)
+            where T : unmanaged, IEquatable<T>
+        {
+            SectorHandle handle = SectorForWrite(pos, out int3 local);
+            handle.SetSlot(slotId, local.x, local.y, local.z, value, simulationFlags);
+            MarkStorageMutated();
+        }
+
+        /// <summary>The sector holding <paramref name="pos"/>, created when missing, and the sector-local coordinates.</summary>
+        private SectorHandle SectorForWrite(int3 pos, out int3 local)
+        {
             int3 sectorPos = new int3(
                 pos.x >> (Sector.SHIFT_IN_BLOCKS + Sector.SHIFT_IN_BRICKS),
                 pos.y >> (Sector.SHIFT_IN_BLOCKS + Sector.SHIFT_IN_BRICKS),
@@ -364,19 +397,9 @@ namespace Caelix
                 AddEmptySectorAt(sectorPos);
             }
 
-            // Modify sector directly in dictionary
-            sectors[sectorPos].SetSlot(
-                slotId,
-                pos.x & (Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS)),
-                pos.y & (Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS)),
-                pos.z & (Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS)),
-                value
-            );
-
-            // A write may allocate a brick and grow the sector's slot buffers, which moves every
-            // pointer bound into them. Advanced on every write rather than only on growth: the
-            // epoch is advisory (see StorageEpoch) and a write is a mutation-phase action anyway.
-            MarkStorageMutated();
+            const int localMask = Sector.BRICK_MASK | (Sector.SECTOR_MASK << Sector.SHIFT_IN_BLOCKS);
+            local = new int3(pos.x & localMask, pos.y & localMask, pos.z & localMask);
+            return sectors[sectorPos];
         }
 
         /// <summary>

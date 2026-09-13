@@ -58,6 +58,12 @@ namespace Caelix
         /// <summary>The brick's require-update flags after propagation.</summary>
         public BrickUpdateFlags Flags;
 
+        /// <summary>
+        /// True when the brick held storage at collection time. False for a position a neighbour
+        /// flagged that has no brick yet (only produced when the collector includes empty positions).
+        /// </summary>
+        public bool IsAllocated;
+
         /// <summary>The entity's pose at the time the record was collected.</summary>
         public RigidTransform LocalToWorld;
     }

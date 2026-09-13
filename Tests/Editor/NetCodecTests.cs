@@ -102,7 +102,7 @@ namespace Caelix.Tests
                 Assert.That(dirty & (ushort)BrickUpdateFlags.Geometry, Is.Not.EqualTo(0));
                 Assert.That(dirty & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
                 Assert.That(dirty & (ushort)BrickUpdateFlags.BlockBrickAdded, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)BrickUpdateFlags.GeneralAutomata, Is.EqualTo(0),
+                Assert.That(dirty & (ushort)BrickUpdateFlags.Automata0, Is.EqualTo(0),
                     "replica must not trigger automata");
 
                 // The record is exact: one byte short of it is a truncated message that applies nothing.

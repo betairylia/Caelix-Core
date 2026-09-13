@@ -209,7 +209,7 @@ namespace Caelix.Tests
 
                 ref Sector source = ref handle.Get();
 
-                const ushort autoBits = (ushort)BrickUpdateFlags.GeneralAutomata;
+                const ushort autoBits = (ushort)BrickUpdateFlags.Automata0;
                 source.sectorRequireUpdateFlags = autoBits;
                 source.brickRequireUpdateFlags[Sector.ToBrickIdx(0, 0, 0)] = autoBits;
                 source.brickRequireUpdateFlags[Sector.ToBrickIdx(4, 4, 4)] = autoBits;
@@ -542,7 +542,7 @@ namespace Caelix.Tests
                 handle.SetBlock(64, 64, 64, new Block(31, 31, 31, true));
 
                 ref Sector source = ref handle.Get();
-                source.sectorRequireUpdateFlags = (ushort)BrickUpdateFlags.GeneralAutomata;
+                source.sectorRequireUpdateFlags = (ushort)BrickUpdateFlags.Automata0;
 
                 uint[] preview = new uint[Sector.BRICKS_IN_SECTOR];
                 PreviewBuilder.Build(handle.Ptr, preview);
@@ -566,7 +566,7 @@ namespace Caelix.Tests
                 {
                     Assert.That(loaded.GetBlock(0, 0, 0), Is.EqualTo(new Block(10, 20, 5, false)));
                     Assert.That(loaded.GetBlock(64, 64, 64), Is.EqualTo(new Block(31, 31, 31, true)));
-                    Assert.That(loaded.sectorRequireUpdateFlags, Is.EqualTo((ushort)BrickUpdateFlags.GeneralAutomata));
+                    Assert.That(loaded.sectorRequireUpdateFlags, Is.EqualTo((ushort)BrickUpdateFlags.Automata0));
                 }
                 finally { loaded.Dispose(Allocator.Persistent); }
             }

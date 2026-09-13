@@ -79,9 +79,58 @@ namespace Caelix.IO
 
             data.RefreshAllocatedBrickLists();
             ApplyFirstFrameUploadFlags(in data);
-            data.entityRequireUpdateFlags |= rec.EntityRequireUpdateFlags;
+            ushort entityRequired = rec.EntityRequireUpdateFlags;
+            if (reader.Header.Version < WorldSaveFormat.AutomataChannelsVersion)
+            {
+                ConvertLegacyGeneralAutomata(in data);
+                entityRequired = ConvertLegacyFlags(entityRequired);
+            }
+
+            data.entityRequireUpdateFlags |= entityRequired;
             // Also fold in the first-frame upload bits at entity level for consistency with sector aggregates.
             data.entityDirtyFlags |= FirstFrameUploadFlags;
+        }
+
+        /// <summary>
+        /// Pre-v8 saves stored every pending automata work in bit 0 (<c>GeneralAutomata</c>). Bit 0
+        /// is now an application channel (<see cref="BrickUpdateFlags.Automata0"/>), so a brick that
+        /// had that work pending gets <see cref="AutomataDefaults.LegacyGeneralAutomataFlags"/>
+        /// instead. Only already-pending bricks are touched; nothing idle wakes.
+        /// </summary>
+        private static unsafe void ConvertLegacyGeneralAutomata(in VoxelEntityData data)
+        {
+            const ushort legacyBit = (ushort)BrickUpdateFlags.Automata0;
+            foreach (var kvp in data.sectors)
+            {
+                ref Sector sector = ref kvp.Value.Get();
+                if ((sector.sectorRequireUpdateFlags & legacyBit) == 0)
+                {
+                    continue;
+                }
+
+                // A flag-array rewrite, like Sector.ClearRequireUpdateFlags: the aggregate must be
+                // recomputed over every position, allocated or not.
+                ushort aggregate = 0;
+                for (int i = 0; i < Sector.BRICKS_IN_SECTOR; i++)
+                {
+                    ushort converted = ConvertLegacyFlags(sector.brickRequireUpdateFlags[i]);
+                    sector.brickRequireUpdateFlags[i] = converted;
+                    aggregate |= converted;
+                }
+
+                sector.sectorRequireUpdateFlags = aggregate;
+            }
+        }
+
+        private static ushort ConvertLegacyFlags(ushort flags)
+        {
+            const ushort legacyBit = (ushort)BrickUpdateFlags.Automata0;
+            if ((flags & legacyBit) == 0)
+            {
+                return flags;
+            }
+
+            return (ushort)((flags & ~legacyBit) | (ushort)AutomataDefaults.LegacyGeneralAutomataFlags);
         }
 
         // Accumulating the dirty flags so renderers can pick them up after dirty propagation

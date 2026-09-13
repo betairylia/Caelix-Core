@@ -118,7 +118,7 @@ namespace Caelix.Tests
             using var scope = new SectorTestScope();
             int brickIdx = Sector.ToBrickIdx(1, 0, 0);
 
-            scope.Sector.MarkBrickRequireUpdate(brickIdx, BrickUpdateFlags.GeneralAutomata);
+            scope.Sector.MarkBrickRequireUpdate(brickIdx, BrickUpdateFlags.Automata0);
 
             Assert.That(scope.Handle.IsRendererDirty, Is.False);
 

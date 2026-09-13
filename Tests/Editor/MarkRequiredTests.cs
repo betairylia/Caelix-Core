@@ -22,10 +22,10 @@ namespace Caelix.Tests
             scope.AddSector(int3.zero);
             scope.Data.SetBlock(new int3(1, 1, 1), new Block(5)); // brick (0,0,0) exists
 
-            scope.Data.MarkRequired(new int3(3, 0, 0), BrickUpdateFlags.GeneralAutomata); // brick (3,0,0) does not
+            scope.Data.MarkRequired(new int3(3, 0, 0), BrickUpdateFlags.Automata0); // brick (3,0,0) does not
 
             using var into = new NativeList<RequiredBrick>(8, Allocator.Persistent);
-            scope.Data.CollectRequiredBricks(EntityId, BrickUpdateFlags.GeneralAutomata, includeEmpty: true, into);
+            scope.Data.CollectRequiredBricks(EntityId, BrickUpdateFlags.Automata0, includeEmpty: true, into);
 
             Assert.That(into.Length, Is.EqualTo(0));
             Assert.That(scope.RequireFlagsAt(int3.zero, new int3(3, 0, 0)), Is.EqualTo(0));
@@ -36,7 +36,7 @@ namespace Caelix.Tests
         {
             using var scope = new EntityDataTestScope();
 
-            Assert.DoesNotThrow(() => scope.Data.MarkRequired(new int3(40, 0, 0), BrickUpdateFlags.GeneralAutomata));
+            Assert.DoesNotThrow(() => scope.Data.MarkRequired(new int3(40, 0, 0), BrickUpdateFlags.Automata0));
             Assert.That(scope.Data.sectors.Count, Is.EqualTo(0));
         }
 
@@ -49,15 +49,15 @@ namespace Caelix.Tests
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
-            scope.Data.MarkRequired(new int3(3, 0, 0), BrickUpdateFlags.GeneralAutomata);
+            scope.Data.MarkRequired(new int3(3, 0, 0), BrickUpdateFlags.Automata0);
 
             using var into = new NativeList<RequiredBrick>(8, Allocator.Persistent);
-            scope.Data.CollectRequiredBricks(EntityId, BrickUpdateFlags.GeneralAutomata, includeEmpty: false, into);
+            scope.Data.CollectRequiredBricks(EntityId, BrickUpdateFlags.Automata0, includeEmpty: false, into);
 
             Assert.That(into.Length, Is.EqualTo(1));
             Assert.That(into[0].Key, Is.EqualTo(new int3(3, 0, 0)));
             Assert.That(into[0].Entity, Is.EqualTo(EntityId));
-            Assert.That((into[0].Flags & BrickUpdateFlags.GeneralAutomata) != 0, Is.True);
+            Assert.That((into[0].Flags & BrickUpdateFlags.Automata0) != 0, Is.True);
         }
 
         [Test]

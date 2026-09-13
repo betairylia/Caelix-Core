@@ -52,7 +52,16 @@ namespace Caelix.IO
         /// <summary>Legacy "VXLS" magic accepted when reading existing saves.</summary>
         public const uint LegacyFileMagic = 0x534C5856u;
 
-        public const ushort CurrentVersion = 7;
+        /// <summary>
+        /// v8: no layout change. Require-update bits 0–11 are application automata channels
+        /// (<see cref="BrickUpdateFlags.Automata0"/>…); older files' pending bit 0 meant the
+        /// engine-wide <c>GeneralAutomata</c> and is converted on load, see <c>WorldLoader</c>.
+        /// </summary>
+        public const ushort CurrentVersion = 8;
+
+        /// <summary>First version whose pending automata bits are application channels.</summary>
+        public const ushort AutomataChannelsVersion = 8;
+
         public const int HeaderBytes = 64;
 
         /// <summary>Byte size of the world record that precedes the entity count (v7+): flags (1) + position (12) + rotation (16).</summary>

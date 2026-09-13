@@ -27,7 +27,7 @@ namespace Caelix.Tests.TestSupport
 
         public DirtyPropagationTestWorld SetBlock(int x, int y, int z, ushort id = 1)
         {
-            Center.SetBlock(x, y, z, new Block(id));
+            Center.SetBlock(x, y, z, new Block(id), BrickUpdateFlags.Automata0); // explicit: these tests exercise propagation, not the default tables
             return this;
         }
 
@@ -37,7 +37,7 @@ namespace Caelix.Tests.TestSupport
             return this;
         }
 
-        public void Propagate(BrickUpdateFlags flags = BrickUpdateFlags.GeneralAutomata)
+        public void Propagate(BrickUpdateFlags flags = BrickUpdateFlags.Automata0)
         {
             entity.Data.PropagateDirtyFlags(flags).Complete();
         }
