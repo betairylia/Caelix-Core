@@ -129,6 +129,11 @@ The owner must complete jobs before disposing or replacing storage. Never dispos
 a borrowed handle or map. Do not retain brick pointers or enumerators across
 allocation, snapshot application, entity replacement, or sector removal.
 
+Local dirty propagation collects missing neighbour sectors in a temporary native
+set before creating them. This scratch set is disposed within the main-thread
+preparation call; it adds no managed collection allocation and is never passed to
+the propagation jobs.
+
 `VoxelEntityData.RemoveSectorAt` first marks the facing bricks of every surviving
 neighbour sector dirty with `GeometryWithLocalNeighbor` and an empty direction
 mask, so consumers that culled boundary data against the removed storage are

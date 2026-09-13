@@ -473,8 +473,9 @@ namespace Caelix
                 return;
             }
 
-            // Collect which neighbor sectors need to be created
-            HashSet<int3> sectorsToCreate = new HashSet<int3>();
+            // Main-thread scratch only: deduplicate before changing the sector map, without
+            // allocating a managed collection on every propagation pass.
+            using var sectorsToCreate = new NativeHashSet<int3>(16, Allocator.Temp);
 
             foreach (var kvp in sectors)
             {
