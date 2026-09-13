@@ -149,6 +149,12 @@ to the snapshot buffers. After scheduled work completes, applying the snapshot
 commits the writes. This supports automata reading a stable state for the stage.
 It does not make two jobs writing the same voxel safe.
 
+Snapshot activation copies into the existing pending slot buffers. Data and aux
+allocations retain capacity across swaps and grow only when needed; slots or aux
+buffers absent from the source are released. This removes repeated allocation for
+stable storage without removing the copy needed to initialize the next snapshot.
+Each committed swap still invalidates previously bound storage access.
+
 Occupancy aux data must be refreshed after committed edits and local dirty
 propagation. `VoxelEntityData.RefreshNonEmptyMask()` uses Geometry require-update
 flags when an aux buffer already exists. Merely calling it after a raw write,

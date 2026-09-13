@@ -14,6 +14,66 @@ namespace Caelix.Tests
     /// </summary>
     public unsafe class NetCodecTests
     {
+        [Test]
+        public void LargeLocalMessagesReuseReturnedBuffers()
+        {
+            LocalChannel.CreatePair(out LocalChannel sender, out LocalChannel receiver);
+            using (sender)
+            using (receiver)
+            {
+                // The profiled WireWorld delta exceeds the default pool limit on some runtimes.
+                byte[] payload = new byte[1_300_001];
+                sender.Send(NetDelivery.Reliable, payload);
+                Assert.That(receiver.TryReceiveLease(out ReceivedMessage first), Is.True);
+                byte[] returned = first.Buffer;
+                first.Dispose();
+                payload[payload.Length - 1] = 97;
+                sender.Send(NetDelivery.Reliable, payload);
+                Assert.That(receiver.TryReceiveLease(out ReceivedMessage next), Is.True);
+                try
+                {
+                    Assert.That(next.Buffer, Is.SameAs(returned));
+                    Assert.That(next.Length, Is.EqualTo(payload.Length));
+                    Assert.That(next.Buffer[next.Length - 1], Is.EqualTo(97));
+                }
+                finally { next.Dispose(); }
+            }
+        }
+
+        [Test]
+        public void LeasedReceivePreservesLengthAndOwnershipAcrossLaterSendsAndDisconnect()
+        {
+            LocalChannel.CreatePair(out LocalChannel sender, out LocalChannel receiver);
+            using (sender)
+            using (receiver)
+            {
+                byte[] payload = new byte[1031];
+                payload[0] = 17;
+                payload[1030] = 23;
+                sender.Send(NetDelivery.Reliable, payload);
+                Assert.That(receiver.TryReceiveLease(out ReceivedMessage first), Is.True);
+                try
+                {
+                    Assert.That(first.Length, Is.EqualTo(1031));
+                    Assert.That(first.Buffer.Length, Is.GreaterThanOrEqualTo(first.Length));
+                    var reader = new NetMessageReader(first.Buffer, first.Length);
+                    Assert.That(reader.Remaining, Is.EqualTo(1031));
+                    for (int i = 0; i < 8; i++)
+                    {
+                        payload[0] = (byte)i;
+                        sender.Send(NetDelivery.Reliable, payload);
+                        Assert.That(receiver.TryReceiveLease(out ReceivedMessage next), Is.True);
+                        next.Dispose();
+                    }
+                    sender.Send(NetDelivery.Reliable, payload);
+                    receiver.Dispose(); // queued leases return; a dequeued lease remains caller-owned
+                    Assert.That(first.Buffer[0], Is.EqualTo(17));
+                    Assert.That(first.Buffer[1030], Is.EqualTo(23));
+                }
+                finally { first.Dispose(); }
+            }
+        }
+
         private const ushort BlockOnly = BrickReplication.DefaultReplicatedSlotMask;
         private const ushort AllSlots = 0xFFFF;
 

@@ -83,30 +83,32 @@ namespace Caelix
         /// </summary>
         public SectorSlotStorage Clone(Allocator allocator)
         {
-            var clone = new SectorSlotStorage
-            {
-                data = IsCreated ? new UnsafeList<byte>(data.Length, allocator) : new UnsafeList<byte>(),
-                aux = default,
-                stride = stride,
-                extraPerBrickBytes = extraPerBrickBytes
-            };
-
-            if (IsCreated && data.Length > 0)
-            {
-                clone.data.Resize(data.Length, NativeArrayOptions.UninitializedMemory);
-                UnsafeUtility.MemCpy(clone.data.Ptr, data.Ptr, data.Length);
-            }
-
-            if (aux.IsCreated)
-            {
-                clone.aux = new UnsafeList<byte>(aux.Length, allocator);
-                if (aux.Length > 0)
-                {
-                    clone.aux.Resize(aux.Length, NativeArrayOptions.UninitializedMemory);
-                    UnsafeUtility.MemCpy(clone.aux.Ptr, aux.Ptr, aux.Length);
-                }
-            }
+            SectorSlotStorage clone = default;
+            clone.CopyFrom(in this, allocator);
             return clone;
+        }
+
+        /// <summary>Copies into independently owned storage, retaining capacity between snapshot swaps.</summary>
+        public void CopyFrom(in SectorSlotStorage source, Allocator allocator)
+        {
+            CopyBuffer(in source.data, ref data, allocator);
+            CopyBuffer(in source.aux, ref aux, allocator);
+            stride = source.stride;
+            extraPerBrickBytes = source.extraPerBrickBytes;
+        }
+
+        private static void CopyBuffer(in UnsafeList<byte> source, ref UnsafeList<byte> target, Allocator allocator)
+        {
+            if (!source.IsCreated)
+            {
+                if (target.IsCreated) target.Dispose();
+                target = default;
+                return;
+            }
+
+            if (!target.IsCreated) target = new UnsafeList<byte>(source.Length, allocator);
+            target.Resize(source.Length, NativeArrayOptions.UninitializedMemory);
+            if (source.Length > 0) UnsafeUtility.MemCpy(target.Ptr, source.Ptr, source.Length);
         }
 
         public void Dispose()
@@ -332,11 +334,9 @@ namespace Caelix
 
         internal static void CopySlotsTo(SectorSlotStorage* from, SectorSlotStorage* to, Allocator allocator)
         {
-            ResetSlotTable(ref to);
-
-            // Clone carries aux across the snapshot so unchanged bricks keep a valid mask; the mark
-            // stages after ApplySnapshot only re-mark the bricks that actually changed this tick.
-            for (int i = 0; i < MAX_SLOTS; i++) { to[i] = from[i].Clone(allocator); }
+            // Both tables own their buffers. Carry aux with the voxels so unchanged bricks keep
+            // valid masks, while reusing the backbuffer allocations from the preceding swap.
+            for (int i = 0; i < MAX_SLOTS; i++) { to[i].CopyFrom(in from[i], allocator); }
         }
 
         private static void ResetSlotTable(ref SectorSlotStorage* slotTable)

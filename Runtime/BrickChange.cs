@@ -66,5 +66,8 @@ namespace Caelix
 
         /// <summary>The entity's pose at the time the record was collected.</summary>
         public RigidTransform LocalToWorld;
+
+        /// <summary>Start/count in this automata stage's alien entity candidate buffer.</summary>
+        public int2 AlienCandidateRange;
     }
 }

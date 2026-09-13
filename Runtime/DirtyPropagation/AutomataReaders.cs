@@ -33,18 +33,46 @@ namespace Caelix
             => Data.GetSlot<T>(slotId, localVoxel);
     }
 
-    public struct AlienOccupancyQuery
+    public unsafe struct AlienOccupancyQuery
     {
         [ReadOnly] public NativeArray<AlienEntityView> EntitiesInDeterministicOrder;
+        [ReadOnly] public NativeArray<int> CandidateIndices;
+        private int2 candidateRange;
+
+        /// <summary>Binds one source brick's candidate range. Keep this value only within the read phase.</summary>
+        public AlienOccupancyQuery ForBrick(in RequiredBrick brick)
+        {
+            AlienOccupancyQuery result = this;
+            result.candidateRange = brick.AlienCandidateRange;
+            return result;
+        }
 
         public Block GetFirstOccupyingAlienBlock(Guid128 selfEntityId, RigidTransform selfLocalToWorld, int3 selfEntityLocalVoxel)
         {
+            BrickCursor cursor = default;
+            TryGetOccupant(selfEntityId, selfLocalToWorld, selfEntityLocalVoxel, ref cursor,
+                out Block block, out _, out _);
+            return block;
+        }
+
+        internal bool TryGetOccupant(Guid128 selfEntityId, RigidTransform selfLocalToWorld,
+            int3 selfEntityLocalVoxel, ref BrickCursor cursor,
+            out Block block, out AlienEntityView occupant, out int3 occupantVoxel)
+        {
+            block = Block.Empty;
+            occupant = default;
+            occupantVoxel = default;
+            // Standalone contexts can still supply a full ordered view list. World ticks always
+            // supply a candidate buffer, including an explicit empty range for isolated bricks.
+            int count = CandidateIndices.IsCreated ? candidateRange.y : EntitiesInDeterministicOrder.Length;
+            if (count == 0) return false;
             float3 localSamplePoint = selfEntityLocalVoxel + new float3(0.5f);
             float3 worldSamplePoint = math.transform(selfLocalToWorld, localSamplePoint);
 
-            for (int i = 0; i < EntitiesInDeterministicOrder.Length; i++)
+            for (int i = 0; i < count; i++)
             {
-                AlienEntityView entity = EntitiesInDeterministicOrder[i];
+                int index = CandidateIndices.IsCreated ? CandidateIndices[candidateRange.x + i] : i;
+                AlienEntityView entity = EntitiesInDeterministicOrder[index];
                 if (entity.EntityId == selfEntityId || !entity.ContainsWorldPoint(worldSamplePoint))
                 {
                     continue;
@@ -52,14 +80,20 @@ namespace Caelix
 
                 float3 alienLocalPoint = math.mul(entity.WorldToLocal, new float4(worldSamplePoint, 1f)).xyz;
                 int3 alienVoxel = (int3)math.floor(alienLocalPoint);
-                Block alienBlock = entity.GetBlockAtLocalVoxel(alienVoxel);
+                if (!entity.Data.TryBindBrick(SectorSlotId.Block, BrickKey.FromBlock(alienVoxel), ref cursor, out Block* values))
+                    continue;
+                int3 local = BrickKey.LocalBlock(alienVoxel);
+                Block alienBlock = values[BrickKey.ToBlockIdx(local.x, local.y, local.z)];
                 if (!alienBlock.isEmpty)
                 {
-                    return alienBlock;
+                    block = alienBlock;
+                    occupant = entity;
+                    occupantVoxel = alienVoxel;
+                    return true;
                 }
             }
 
-            return Block.Empty;
+            return false;
         }
 
         public bool IsVoxelSpaceOccupied(Guid128 selfEntityId, RigidTransform selfLocalToWorld, int3 selfEntityLocalVoxel)
@@ -82,6 +116,7 @@ namespace Caelix
         private RigidTransform selfLocalToWorld;
         private AutomataBrick access;
         private AlienOccupancyQuery alienQuery;
+        private BrickCursor cursor;
 
         /// <summary>Binds a work record and its opened brick to an alien query.</summary>
         public static AutomataReader Create(
@@ -92,7 +127,7 @@ namespace Caelix
                 selfEntityId = brick.Entity,
                 selfLocalToWorld = brick.LocalToWorld,
                 access = access,
-                alienQuery = alienQuery
+                alienQuery = alienQuery.ForBrick(brick)
             };
         }
 
@@ -111,7 +146,27 @@ namespace Caelix
                 return localBlock;
             }
 
-            return alienQuery.GetFirstOccupyingAlienBlock(selfEntityId, selfLocalToWorld, blockPos);
+            alienQuery.TryGetOccupant(selfEntityId, selfLocalToWorld, blockPos, ref cursor,
+                out Block block, out _, out _);
+            return block;
+        }
+
+        /// <summary>
+        /// Reads metadata from the same local-first occupant selection as GetBlock. The returned
+        /// position is that occupant's voxel center. Cursors are owned by this reader and must not
+        /// survive EndAutomataWrites; no slot pointer is retained across calls.
+        /// </summary>
+        public T GetSlot<T>(SectorSlotId slot, int3 blockPos, out float3 worldPosition)
+            where T : unmanaged, System.IEquatable<T>
+        {
+            worldPosition = math.transform(selfLocalToWorld, blockPos + new float3(0.5f));
+            if (!access.GetBlock(blockPos).isEmpty) return access.GetSlot<T>(slot, blockPos);
+            if (!alienQuery.TryGetOccupant(selfEntityId, selfLocalToWorld, blockPos, ref cursor,
+                    out _, out AlienEntityView entity, out int3 voxel)) return default;
+            worldPosition = math.transform(entity.LocalToWorld, voxel + new float3(0.5f));
+            if (!entity.Data.TryBindBrick(slot, BrickKey.FromBlock(voxel), ref cursor, out T* values)) return default;
+            int3 local = BrickKey.LocalBlock(voxel);
+            return values[BrickKey.ToBlockIdx(local.x, local.y, local.z)];
         }
 
         /// <summary>True when this entity or any other occupies the voxel at an entity-local position.</summary>
@@ -122,7 +177,7 @@ namespace Caelix
                 return true;
             }
 
-            return alienQuery.IsVoxelSpaceOccupied(selfEntityId, selfLocalToWorld, blockPos);
+            return !GetBlock(blockPos).isEmpty;
         }
     }
 
