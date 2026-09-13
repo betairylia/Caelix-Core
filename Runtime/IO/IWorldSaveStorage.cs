@@ -14,6 +14,12 @@ namespace Caelix.IO
         /// <summary>Write one entity and all of its sectors. Sector payloads are consumed immediately and may be generated lazily.</summary>
         void WriteEntity(in EntityRecord entity, IEnumerable<SectorWriteRecord> sectors);
 
+        /// <summary>
+        /// Sets the world-level record (player pose and future world data). May be called at any
+        /// time before <see cref="Commit"/>; the last value wins. Defaults to <see cref="WorldRecord.None"/>.
+        /// </summary>
+        void WriteWorld(in WorldRecord world);
+
         /// <summary>Finalizes the file: writes the entity table, backpatches the header, atomically replaces the destination.</summary>
         void Commit();
     }
@@ -25,6 +31,10 @@ namespace Caelix.IO
     public interface IWorldSaveReader : IDisposable
     {
         SaveHeader Header { get; }
+
+        /// <summary>The world-level record; <see cref="WorldRecord.None"/> for files older than v7.</summary>
+        WorldRecord World { get; }
+
         int EntityCount { get; }
         EntityRecord ReadEntityRecord(int entityIndex);
         IReadOnlyList<SectorIndexEntry> ReadSectorIndex(int entityIndex);

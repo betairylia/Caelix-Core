@@ -25,6 +25,10 @@ namespace Caelix.IO
     ///     SectorIndexEntry[entity.sectorCount]
     ///
     /// [EntityTable — at entityTableOffset]
+    ///   [WorldRecord — v7+; absent in older files]
+    ///     u8   worldFlags          (bit0 = player pose present)
+    ///     3  × f32 playerPosition  (world space)
+    ///     4  × f32 playerRotation  (xyzw; identity when no pose)
     ///   u32  entityCount
     ///   For each entity:
     ///     16 B guid
@@ -48,8 +52,11 @@ namespace Caelix.IO
         /// <summary>Legacy "VXLS" magic accepted when reading existing saves.</summary>
         public const uint LegacyFileMagic = 0x534C5856u;
 
-        public const ushort CurrentVersion = 6;
+        public const ushort CurrentVersion = 7;
         public const int HeaderBytes = 64;
+
+        /// <summary>Byte size of the world record that precedes the entity count (v7+): flags (1) + position (12) + rotation (16).</summary>
+        public const int WorldRecordBytes = 1 + 12 + 16;
 
         /// <summary>Size in bytes of the uncompressed per-sector preview blob (u32 per brick).</summary>
         public const int PreviewBytes = Sector.BRICKS_IN_SECTOR * 4;
@@ -101,6 +108,53 @@ namespace Caelix.IO
     {
         None = 0,
         Deflate = 1 << 0,
+    }
+
+    /// <summary>World-level boolean state stored on disk as one byte (v7+).</summary>
+    [Flags]
+    public enum WorldFlags : byte
+    {
+        None = 0,
+
+        /// <summary>The file carries a player pose (<see cref="WorldRecord.PlayerPosition"/> / <see cref="WorldRecord.PlayerRotation"/>).</summary>
+        HasPlayerPose = 1 << 0,
+
+        All = HasPlayerPose,
+    }
+
+    /// <summary>
+    /// World-level data of a save (v7+): everything that belongs to the file as a whole rather
+    /// than to one entity. Today that is the player pose, which the game currently fills with the
+    /// camera pose; it is meant to become the player coordinate once a player exists. Files
+    /// older than v7 read as <see cref="None"/>.
+    /// </summary>
+    public readonly struct WorldRecord
+    {
+        public readonly WorldFlags Flags;
+
+        /// <summary>World-space player (currently camera) position. Only meaningful when <see cref="HasPlayerPose"/>.</summary>
+        public readonly float3 PlayerPosition;
+
+        /// <summary>World-space player (currently camera) rotation. Only meaningful when <see cref="HasPlayerPose"/>.</summary>
+        public readonly quaternion PlayerRotation;
+
+        /// <summary>A record without any world-level data (what pre-v7 files and a plain entity-only save carry).</summary>
+        public static WorldRecord None => default;
+
+        public bool HasPlayerPose => (Flags & WorldFlags.HasPlayerPose) != 0;
+
+        public WorldRecord(WorldFlags flags, float3 playerPosition, quaternion playerRotation)
+        {
+            Flags = flags;
+            PlayerPosition = playerPosition;
+            PlayerRotation = playerRotation;
+        }
+
+        /// <summary>A record that carries the given player pose.</summary>
+        public static WorldRecord WithPlayerPose(float3 position, quaternion rotation)
+        {
+            return new WorldRecord(WorldFlags.HasPlayerPose, position, rotation);
+        }
     }
 
     public readonly struct SaveHeader

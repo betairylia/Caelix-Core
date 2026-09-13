@@ -23,9 +23,11 @@ namespace Caelix.IO
         // Write state
         private readonly List<EntityRecord> _entityRecords = new();
         private readonly List<(long IndexOffset, int SectorCount)> _entityIndexLocations = new();
+        private WorldRecord _writeWorld = WorldRecord.None;
 
         // Read state
         private SaveHeader _header;
+        private WorldRecord _readWorld = WorldRecord.None;
         private List<EntityRecord> _readEntities;
         private List<SectorIndexEntry>[] _readSectorIndices;
         private Dictionary<int3, SectorIndexEntry>[] _readSectorMaps;
@@ -125,11 +127,18 @@ namespace Caelix.IO
                 (uint)(regionEnd - regionOffset)));
         }
 
+        public void WriteWorld(in WorldRecord world)
+        {
+            EnsureWriting();
+            _writeWorld = world;
+        }
+
         public void Commit()
         {
             EnsureWriting();
 
             long entityTableOffset = _stream.Position;
+            WriteWorldRecord(in _writeWorld);
             _writer.Write((uint)_entityRecords.Count);
             for (int i = 0; i < _entityRecords.Count; i++)
             {
@@ -178,6 +187,35 @@ namespace Caelix.IO
             _committed = true;
         }
 
+        private void WriteWorldRecord(in WorldRecord world)
+        {
+            // A pose-less record stores identity rather than whatever the caller left in the
+            // struct, so the bytes of two pose-less saves are equal.
+            bool hasPose = world.HasPlayerPose;
+            float3 pos = hasPose ? world.PlayerPosition : float3.zero;
+            float4 rot = hasPose ? world.PlayerRotation.value : quaternion.identity.value;
+            _writer.Write((byte)(world.Flags & WorldFlags.All));
+            _writer.Write(pos.x);
+            _writer.Write(pos.y);
+            _writer.Write(pos.z);
+            _writer.Write(rot.x);
+            _writer.Write(rot.y);
+            _writer.Write(rot.z);
+            _writer.Write(rot.w);
+        }
+
+        private WorldRecord ReadWorldRecord()
+        {
+            var flags = (WorldFlags)_reader.ReadByte() & WorldFlags.All;
+            var pos = new float3(_reader.ReadSingle(), _reader.ReadSingle(), _reader.ReadSingle());
+            var rot = new float4(
+                _reader.ReadSingle(),
+                _reader.ReadSingle(),
+                _reader.ReadSingle(),
+                _reader.ReadSingle());
+            return new WorldRecord(flags, pos, new quaternion(rot));
+        }
+
         // ---------- Read ----------
 
         private void LoadIndex()
@@ -200,6 +238,9 @@ namespace Caelix.IO
                 throw new InvalidDataException($"Unsupported save flags 0x{flagsRaw:X4}; this reader requires Deflate-compressed sector payloads.");
 
             _stream.Position = (long)entityTableOffset;
+            // The world record precedes the entity count from format v7 onward; older files
+            // carry no world-level data and read as WorldRecord.None.
+            _readWorld = version >= 7 ? ReadWorldRecord() : WorldRecord.None;
             int entityCount = (int)_reader.ReadUInt32();
             _readEntities = new List<EntityRecord>(entityCount);
             var indexLocations = new (long, int)[entityCount];
@@ -277,6 +318,7 @@ namespace Caelix.IO
         }
 
         public SaveHeader Header => _header;
+        public WorldRecord World => _readWorld;
         public int EntityCount => _readEntities?.Count ?? 0;
 
         public EntityRecord ReadEntityRecord(int entityIndex)

@@ -41,7 +41,16 @@ namespace Caelix.IO
     {
         public static void Save(string path, IReadOnlyList<EntitySaveRecord> entities)
         {
+            Save(path, entities, WorldRecord.None);
+        }
+
+        /// <summary>
+        /// Saves the entities plus a world-level record (player pose and future world data).
+        /// </summary>
+        public static void Save(string path, IReadOnlyList<EntitySaveRecord> entities, in WorldRecord world)
+        {
             using var writer = SingleFileSaveStorage.OpenWrite(path);
+            writer.WriteWorld(in world);
             for (int i = 0; i < entities.Count; i++)
             {
                 EntitySaveRecord rec = entities[i];

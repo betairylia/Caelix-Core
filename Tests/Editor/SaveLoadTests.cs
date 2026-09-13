@@ -824,6 +824,87 @@ namespace Caelix.Tests
             Assert.That(rec.HasBody, Is.False);
         }
 
+        [Test]
+        public void WriteRead_RoundTripsWorldRecordWithPlayerPose()
+        {
+            var position = new float3(12.5f, -3.0f, 1024.25f);
+            quaternion rotation = quaternion.Euler(0.4f, -1.1f, 0.25f);
+
+            using (var writer = SingleFileSaveStorage.OpenWrite(_tempPath))
+            {
+                var entityRecord = new EntityRecord(NewGuid128(), default, 0);
+                writer.WriteEntity(in entityRecord, Array.Empty<SectorWriteRecord>());
+                writer.WriteWorld(WorldRecord.WithPlayerPose(position, rotation));
+                writer.Commit();
+            }
+
+            using var reader = SingleFileSaveStorage.OpenRead(_tempPath);
+            Assert.That(reader.Header.Version, Is.EqualTo(WorldSaveFormat.CurrentVersion));
+            Assert.That(reader.World.HasPlayerPose, Is.True);
+            Assert.That(reader.World.Flags, Is.EqualTo(WorldFlags.HasPlayerPose));
+            Assert.That(reader.World.PlayerPosition, Is.EqualTo(position));
+            Assert.That(reader.World.PlayerRotation.value, Is.EqualTo(rotation.value));
+            Assert.That(reader.EntityCount, Is.EqualTo(1), "The world record must not disturb the entity table");
+        }
+
+        [Test]
+        public void WriteRead_WithoutWorldRecord_ReadsNoPlayerPose()
+        {
+            WriteMinimalSave();
+
+            using var reader = SingleFileSaveStorage.OpenRead(_tempPath);
+            Assert.That(reader.World.HasPlayerPose, Is.False);
+            Assert.That(reader.World.Flags, Is.EqualTo(WorldFlags.None));
+            Assert.That(reader.World.PlayerPosition, Is.EqualTo(float3.zero));
+            Assert.That(reader.World.PlayerRotation.value, Is.EqualTo(quaternion.identity.value),
+                "A pose-less record must store identity so pose-less saves are byte-stable");
+            Assert.That(reader.EntityCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void OpenRead_Version6Save_ReadsWorldRecordAsNone()
+        {
+            // Hand-write a v6 file: the entity count sits directly at entityTableOffset, no world record.
+            Guid128 guid = NewGuid128();
+            using (var fs = new FileStream(_tempPath, FileMode.Create, FileAccess.Write))
+            using (var bw = new BinaryWriter(fs))
+            {
+                bw.Write(new byte[WorldSaveFormat.HeaderBytes]);
+                long tableOffset = fs.Position;
+
+                bw.Write(1u); // entityCount
+                uint4 g = guid.Value;
+                bw.Write(g.x);
+                bw.Write(g.y);
+                bw.Write(g.z);
+                bw.Write(g.w);
+                for (int i = 0; i < 7; i++) bw.Write(0f); // pos.xyz + rot.xyzw
+                bw.Write((ushort)0x0042); // entityRequireUpdateFlags
+                bw.Write((byte)EntityFlags.Static); // v6 entity flags
+                for (int i = 0; i < 6; i++) bw.Write(0f); // v4 velocity
+                bw.Write((byte)1); // v5 protected
+                bw.Write((ulong)tableOffset); // sectorIndexOffset (no sectors, never dereferenced)
+                bw.Write(0u); // sectorCount
+
+                fs.Position = 0;
+                bw.Write(WorldSaveFormat.FileMagic);
+                bw.Write((ushort)6); // version 6
+                bw.Write((ushort)SaveFlags.Deflate);
+                bw.Write((ulong)tableOffset);
+            }
+
+            using var reader = SingleFileSaveStorage.OpenRead(_tempPath);
+            Assert.That(reader.Header.Version, Is.EqualTo(6));
+            Assert.That(reader.World.HasPlayerPose, Is.False, "Pre-v7 saves carry no player pose");
+            Assert.That(reader.EntityCount, Is.EqualTo(1));
+
+            var rec = reader.ReadEntityRecord(0);
+            Assert.That(rec.Guid, Is.EqualTo(guid));
+            Assert.That(rec.EntityRequireUpdateFlags, Is.EqualTo((ushort)0x0042));
+            Assert.That(rec.Flags, Is.EqualTo(EntityFlags.Static));
+            Assert.That(rec.Protected, Is.True);
+        }
+
         private void WriteMinimalSave()
         {
             uint[] preview = new uint[Sector.BRICKS_IN_SECTOR];

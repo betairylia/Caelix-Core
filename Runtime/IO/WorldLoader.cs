@@ -39,7 +39,12 @@ namespace Caelix.IO
         public const ushort FirstFrameUploadFlags =
             (ushort)(BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.GeometryWithLocalNeighbor | BrickUpdateFlags.Geometry);
 
-        public static void Load(string path, IWorldLoadTarget target)
+        /// <summary>
+        /// Loads every entity into <paramref name="target"/> and returns the file's world-level
+        /// record. The record is not applied to anything: the caller decides what to do with the
+        /// player pose (<see cref="WorldRecord.None"/> for files older than v7).
+        /// </summary>
+        public static WorldRecord Load(string path, IWorldLoadTarget target)
         {
             using var reader = SingleFileSaveStorage.OpenRead(path);
             for (int i = 0; i < reader.EntityCount; i++)
@@ -49,6 +54,7 @@ namespace Caelix.IO
                 LoadEntity(reader, i, in rec, ref data);
                 target.CommitEntity(in rec, in data);
             }
+            return reader.World;
         }
 
         public static unsafe void LoadEntity(
