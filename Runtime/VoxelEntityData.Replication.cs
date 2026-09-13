@@ -83,8 +83,8 @@ namespace Caelix
             {
                 Key = key,
                 Kind = ChangeKind.Removed,
-                SourceFlags = DirtyFlags.BlockBrickRemoved,
-                RequiredFlags = DirtyFlags.BlockBrickRemoved
+                DirtyFlags = BrickUpdateFlags.BlockBrickRemoved,
+                RequireUpdateFlags = BrickUpdateFlags.BlockBrickRemoved
             });
         }
     }

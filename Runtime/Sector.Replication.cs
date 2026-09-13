@@ -81,7 +81,7 @@ namespace Caelix
         /// <paramref name="brickIdx"/>: allocates the brick and any missing slot storage, copies
         /// the raw bytes, marks the brick dirty with
         /// <see cref="BrickReplication.ReplicationApplyFlags"/> (plus
-        /// <see cref="DirtyFlags.BlockBrickAdded"/> for a brick this sector did not have yet), and
+        /// <see cref="BrickUpdateFlags.BlockBrickAdded"/> for a brick this sector did not have yet), and
         /// widens the block AABB to the brick bounds.
         /// </summary>
         /// <param name="brickIdx">Absolute brick index inside this sector.</param>
@@ -121,7 +121,7 @@ namespace Caelix
 
             MarkBrickDirty(
                 brickIdx,
-                BrickReplication.ReplicationApplyFlags | (isNew ? DirtyFlags.BlockBrickAdded : DirtyFlags.None),
+                BrickReplication.ReplicationApplyFlags | (isNew ? BrickUpdateFlags.BlockBrickAdded : BrickUpdateFlags.None),
                 0xFFFFFFFF);
 
             int3 origin = brickPos * SIZE_IN_BLOCKS;

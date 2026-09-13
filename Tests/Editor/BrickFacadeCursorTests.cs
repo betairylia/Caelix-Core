@@ -48,7 +48,7 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(3, 4, 5), Solid());                             // key (0,0,0)
             scope.Data.SetBlock(new int3(VoxelRegion.SizeInBlocks + 3, 4, 5), Solid());  // key (16,0,0)
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.RefreshNonEmptyMask();
 
             int3[] keys =
@@ -114,78 +114,78 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(7, 3, 3), Solid());    // key (0,0,0)
             scope.Data.SetBlock(new int3(8, 3, 3), Solid());    // key (1,0,0)
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
-            Assert.That(scope.Data.GetRequiredFlags(new int3(0, 0, 0)), Is.EqualTo(DirtyFlags.None));
+            Assert.That(scope.Data.GetRequiredFlags(new int3(0, 0, 0)), Is.EqualTo(BrickUpdateFlags.None));
 
-            scope.Data.MarkBrickDirty(new int3(0, 0, 0), DirtyFlags.GeometryWithLocalNeighbor);
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.MarkBrickDirty(new int3(0, 0, 0), BrickUpdateFlags.GeometryWithLocalNeighbor);
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
 
             Assert.That(
-                scope.Data.GetRequiredFlags(new int3(0, 0, 0)) & DirtyFlags.GeometryWithLocalNeighbor,
-                Is.EqualTo(DirtyFlags.GeometryWithLocalNeighbor));
+                scope.Data.GetRequiredFlags(new int3(0, 0, 0)) & BrickUpdateFlags.GeometryWithLocalNeighbor,
+                Is.EqualTo(BrickUpdateFlags.GeometryWithLocalNeighbor));
             Assert.That(
-                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & DirtyFlags.GeometryWithLocalNeighbor,
-                Is.EqualTo(DirtyFlags.GeometryWithLocalNeighbor),
+                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & BrickUpdateFlags.GeometryWithLocalNeighbor,
+                Is.EqualTo(BrickUpdateFlags.GeometryWithLocalNeighbor),
                 "the marker propagates to the neighbouring brick");
 
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
-            Assert.That(scope.Data.MarkRequired(new int3(1, 0, 0), DirtyFlags.GeneralAutomata), Is.True);
+            Assert.That(scope.Data.MarkRequired(new int3(1, 0, 0), BrickUpdateFlags.GeneralAutomata), Is.True);
             Assert.That(
-                scope.Data.MarkRequired(new int3(5, 5, 5), DirtyFlags.GeneralAutomata), Is.False,
+                scope.Data.MarkRequired(new int3(5, 5, 5), BrickUpdateFlags.GeneralAutomata), Is.False,
                 "an unallocated brick has nothing to work on");
             Assert.That(
-                scope.Data.MarkRequired(new int3(1000, 0, 0), DirtyFlags.GeneralAutomata), Is.False,
+                scope.Data.MarkRequired(new int3(1000, 0, 0), BrickUpdateFlags.GeneralAutomata), Is.False,
                 "a missing region has nothing to work on");
             Assert.That(
-                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & DirtyFlags.GeneralAutomata,
-                Is.EqualTo(DirtyFlags.GeneralAutomata));
-            Assert.That(scope.Data.GetRequiredFlags(new int3(1000, 0, 0)), Is.EqualTo(DirtyFlags.None));
+                scope.Data.GetRequiredFlags(new int3(1, 0, 0)) & BrickUpdateFlags.GeneralAutomata,
+                Is.EqualTo(BrickUpdateFlags.GeneralAutomata));
+            Assert.That(scope.Data.GetRequiredFlags(new int3(1000, 0, 0)), Is.EqualTo(BrickUpdateFlags.None));
 
             // A marker on a missing region is a no-op, and creates nothing.
-            scope.Data.MarkBrickDirty(new int3(1000, 0, 0), DirtyFlags.Geometry);
+            scope.Data.MarkBrickDirty(new int3(1000, 0, 0), BrickUpdateFlags.Geometry);
             Assert.That(scope.Data.HasRegion(new int3(7, 0, 0)), Is.False);
         }
 
         [Test]
-        public void EnumerateBrickSourceFlagsReadsTheDirtySide()
+        public void EnumerateBrickDirtyFlagsReadsTheDirtySide()
         {
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(1, 1, 1), Solid());                                          // key (0,0,0)
             scope.Data.SetBlock(VoxelRegion.OriginOf(new int3(1, 0, 0)) + new int3(1, 1, 1), Solid()); // key (16,0,0)
 
-            Dictionary<int3, DirtyFlags> dirty = CollectSourceFlags(scope.Data, DirtyFlags.All, true);
+            Dictionary<int3, BrickUpdateFlags> dirty = CollectDirtyFlags(scope.Data, BrickUpdateFlags.All, true);
             Assert.That(dirty.Count, Is.EqualTo(2));
             Assert.That(dirty.ContainsKey(new int3(0, 0, 0)), Is.True);
             Assert.That(dirty.ContainsKey(new int3(16, 0, 0)), Is.True);
-            foreach (KeyValuePair<int3, DirtyFlags> entry in dirty)
+            foreach (KeyValuePair<int3, BrickUpdateFlags> entry in dirty)
             {
-                Assert.That(entry.Value & DirtyFlags.Geometry, Is.EqualTo(DirtyFlags.Geometry));
+                Assert.That(entry.Value & BrickUpdateFlags.Geometry, Is.EqualTo(BrickUpdateFlags.Geometry));
             }
 
-            Dictionary<int3, DirtyFlags> everything = CollectSourceFlags(scope.Data, DirtyFlags.All, false);
+            Dictionary<int3, BrickUpdateFlags> everything = CollectDirtyFlags(scope.Data, BrickUpdateFlags.All, false);
             Assert.That(everything.Count, Is.EqualTo(2));
 
             // A narrower mask keeps only the flags asked for.
-            Dictionary<int3, DirtyFlags> narrow = CollectSourceFlags(scope.Data, DirtyFlags.Geometry, true);
+            Dictionary<int3, BrickUpdateFlags> narrow = CollectDirtyFlags(scope.Data, BrickUpdateFlags.Geometry, true);
             Assert.That(narrow.Count, Is.EqualTo(2));
-            foreach (KeyValuePair<int3, DirtyFlags> entry in narrow)
+            foreach (KeyValuePair<int3, BrickUpdateFlags> entry in narrow)
             {
-                Assert.That(entry.Value, Is.EqualTo(DirtyFlags.Geometry));
+                Assert.That(entry.Value, Is.EqualTo(BrickUpdateFlags.Geometry));
             }
 
             scope.Data.ClearDirtyFlags();
-            Assert.That(CollectSourceFlags(scope.Data, DirtyFlags.All, true).Count, Is.EqualTo(0));
+            Assert.That(CollectDirtyFlags(scope.Data, BrickUpdateFlags.All, true).Count, Is.EqualTo(0));
 
-            Dictionary<int3, DirtyFlags> afterClear = CollectSourceFlags(scope.Data, DirtyFlags.All, false);
+            Dictionary<int3, BrickUpdateFlags> afterClear = CollectDirtyFlags(scope.Data, BrickUpdateFlags.All, false);
             Assert.That(afterClear.Count, Is.EqualTo(2), "the full walk still lists every allocated brick");
-            foreach (KeyValuePair<int3, DirtyFlags> entry in afterClear)
+            foreach (KeyValuePair<int3, BrickUpdateFlags> entry in afterClear)
             {
-                Assert.That(entry.Value, Is.EqualTo(DirtyFlags.None));
+                Assert.That(entry.Value, Is.EqualTo(BrickUpdateFlags.None));
             }
         }
 
@@ -197,7 +197,7 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(1, 2, 3), Solid(4));
             scope.Data.SetBlock(new int3(5, 6, 7), Solid(8));
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.RefreshNonEmptyMask();
 
             var found = new List<int3>();
@@ -275,7 +275,7 @@ namespace Caelix.Tests
         {
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(1, 1, 1), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.RefreshNonEmptyMask();
 
             int center = VoxelNeighborhood.Index(0, 0, 0);
@@ -410,8 +410,8 @@ namespace Caelix.Tests
 
             Assert.That(Collect(data.EnumerateBricks()), Is.Empty);
             Assert.That(Collect(data.EnumerateBricks(int3.zero, new int3(15))), Is.Empty);
-            Assert.That(CollectSourceFlags(data, DirtyFlags.All, true).Count, Is.EqualTo(0));
-            Assert.That(CollectSourceFlags(data, DirtyFlags.All, false).Count, Is.EqualTo(0));
+            Assert.That(CollectDirtyFlags(data, BrickUpdateFlags.All, true).Count, Is.EqualTo(0));
+            Assert.That(CollectDirtyFlags(data, BrickUpdateFlags.All, false).Count, Is.EqualTo(0));
 
             Assert.That(data.IsBrickAllocated(int3.zero), Is.False);
             BrickCursor cursor = default;
@@ -425,9 +425,9 @@ namespace Caelix.Tests
             Assert.That(data.TryBindBrickAux(SectorSlotId.Block, int3.zero, ref cursor, out void* cursorAux), Is.False);
             Assert.That((IntPtr)cursorAux, Is.EqualTo(IntPtr.Zero));
 
-            Assert.That(data.GetRequiredFlags(int3.zero), Is.EqualTo(DirtyFlags.None));
-            data.MarkBrickDirty(int3.zero, DirtyFlags.Geometry);
-            Assert.That(data.MarkRequired(int3.zero, DirtyFlags.Geometry), Is.False);
+            Assert.That(data.GetRequiredFlags(int3.zero), Is.EqualTo(BrickUpdateFlags.None));
+            data.MarkBrickDirty(int3.zero, BrickUpdateFlags.Geometry);
+            Assert.That(data.MarkRequired(int3.zero, BrickUpdateFlags.Geometry), Is.False);
 
             int bitmask = 0;
             foreach (BrickSlotEntry<Block> _ in
@@ -465,11 +465,11 @@ namespace Caelix.Tests
             return keys;
         }
 
-        private static Dictionary<int3, DirtyFlags> CollectSourceFlags(
-            VoxelEntityData data, DirtyFlags mask, bool dirtyOnly)
+        private static Dictionary<int3, BrickUpdateFlags> CollectDirtyFlags(
+            VoxelEntityData data, BrickUpdateFlags mask, bool dirtyOnly)
         {
-            var found = new Dictionary<int3, DirtyFlags>();
-            foreach (BrickSourceFlags entry in data.EnumerateBrickSourceFlags(mask, dirtyOnly))
+            var found = new Dictionary<int3, BrickUpdateFlags>();
+            foreach (BrickDirtyFlags entry in data.EnumerateBrickDirtyFlags(mask, dirtyOnly))
             {
                 Assert.That(found.ContainsKey(entry.Key), Is.False, $"duplicate key {entry.Key}");
                 found.Add(entry.Key, entry.Flags);

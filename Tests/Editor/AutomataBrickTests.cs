@@ -29,12 +29,12 @@ namespace Caelix.Tests
             scope.Data.SetBlock(new int3(5, 5, 5), Solid(1));
             scope.Data.SetBlock(new int3(6, 5, 5), Solid(3));
             scope.Data.SetBlock(new int3(8, 5, 5), Solid(2));   // the next brick over
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
             var key = new int3(0, 0, 0);
-            Assert.That(scope.Data.MarkRequired(key, DirtyFlags.GeneralAutomata), Is.True);
+            Assert.That(scope.Data.MarkRequired(key, BrickUpdateFlags.GeneralAutomata), Is.True);
             scope.Data.BeginAutomataWrites();
 
             AutomataBrick brick = scope.Data.OpenAutomataBrick(key);
@@ -62,8 +62,8 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(5, 5, 5), Solid(1));
             scope.Data.SetBlock(new int3(8, 5, 5), Solid(2));
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
-            scope.Data.MarkRequired(new int3(0, 0, 0), DirtyFlags.GeneralAutomata);
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
+            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.GeneralAutomata);
             scope.Data.BeginAutomataWrites();
 
             AutomataBrick brick = scope.Data.OpenAutomataBrick(new int3(0, 0, 0));
@@ -94,10 +94,10 @@ namespace Caelix.Tests
         {
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(5, 5, 5), Solid(1));   // region (0,0,0), brick (0,0,0)
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
-            scope.Data.MarkRequired(new int3(0, 0, 0), DirtyFlags.GeneralAutomata);
+            scope.Data.MarkRequired(new int3(0, 0, 0), BrickUpdateFlags.GeneralAutomata);
             scope.Data.BeginAutomataWrites();
 
             var key = new int3(1, 1, 1);
@@ -146,7 +146,7 @@ namespace Caelix.Tests
                 {
                     Entity = SelfEntityId,
                     Key = new int3(0, 0, 0),
-                    Flags = DirtyFlags.GeneralAutomata,
+                    Flags = BrickUpdateFlags.GeneralAutomata,
                     LocalToWorld = RigidTransform.identity
                 };
 

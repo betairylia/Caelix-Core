@@ -98,7 +98,7 @@ namespace Caelix
         /// write side of the dirty contract is legitimate.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public SectorDirtyBrickEnumerator EnumerateDirtyBricks(DirtyFlags mask)
+        public SectorDirtyBrickEnumerator EnumerateDirtyBricks(BrickUpdateFlags mask)
             => new SectorDirtyBrickEnumerator(this, mask);
     }
 }

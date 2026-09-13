@@ -72,7 +72,7 @@ namespace Caelix
         /// <summary>
         /// Returns true if there are pending brick updates for the renderer.
         /// </summary>
-        public bool IsRendererRequireUpdate => (sectorRequireUpdateFlags & (ushort)(DirtyFlags.GeometryWithLocalNeighbor | DirtyFlags.BlockBrickAdded | DirtyFlags.BlockBrickRemoved)) != 0;
+        public bool IsRendererRequireUpdate => (sectorRequireUpdateFlags & (ushort)(BrickUpdateFlags.GeometryWithLocalNeighbor | BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.BlockBrickRemoved)) != 0;
 
         // Binary spin gates (0 = free, 1 = held) guarding the rare brick-/slot-allocation
         // and sector-flag-aggregation critical sections. Acquired/released only through
@@ -490,7 +490,7 @@ namespace Caelix
         /// <param name="flags">The dirty flags to set.</param>
         /// <param name="directionMask">Bitmask indicating which of 26 neighbor directions need propagation (0xFFFFFFFF = all directions)</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkBrickDirty(int brickIdx, DirtyFlags flags, uint directionMask = 0xFFFFFFFF)
+        public void MarkBrickDirty(int brickIdx, BrickUpdateFlags flags, uint directionMask = 0xFFFFFFFF)
         {
             brickDirtyFlags[brickIdx] |= (ushort)flags;
             brickDirtyDirectionMask[brickIdx] |= directionMask;
@@ -519,7 +519,7 @@ namespace Caelix
         /// <param name="brickIdx">The absolute brick index to mark for update.</param>
         /// <param name="flags">The update flags to set.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkBrickRequireUpdate(int brickIdx, DirtyFlags flags)
+        public void MarkBrickRequireUpdate(int brickIdx, BrickUpdateFlags flags)
         {
             brickRequireUpdateFlags[brickIdx] |= (ushort)flags;
             sectorRequireUpdateFlags |= (ushort)flags;
@@ -542,7 +542,7 @@ namespace Caelix
         /// Clears specific require-update flags for all bricks in the sector.
         /// </summary>
         /// <param name="flags">The flags to clear.</param>
-        public void ClearRequireUpdateFlags(DirtyFlags flags)
+        public void ClearRequireUpdateFlags(BrickUpdateFlags flags)
         {
             ushort clearMask = (ushort)~flags;
             int totalBricks = SIZE_IN_BRICKS * SIZE_IN_BRICKS * SIZE_IN_BRICKS;
@@ -561,7 +561,7 @@ namespace Caelix
         /// Clears specific dirty flags for all bricks in the sector.
         /// </summary>
         /// <param name="flags">The flags to clear.</param>
-        public void ClearDirtyFlags(DirtyFlags flags)
+        public void ClearDirtyFlags(BrickUpdateFlags flags)
         {
             ushort clearMask = (ushort)~flags;
             int totalBricks = SIZE_IN_BRICKS * SIZE_IN_BRICKS * SIZE_IN_BRICKS;

@@ -7,8 +7,16 @@ using Unity.Mathematics;
 
 namespace Caelix
 {
+    /// <summary>What a brick needs doing. The same bit set names both flag sides.</summary>
+    /// <remarks>
+    /// A brick carries two of these: its DIRTY flags (<c>brickDirtyFlags</c>, what a write just
+    /// changed inside it, cleared at the end of every tick) and its REQUIRE-UPDATE flags
+    /// (<c>brickRequireUpdateFlags</c>, what work it needs after propagation, which survives to the
+    /// next tick). The enum names neither side, which is why it is not called <c>DirtyFlags</c>;
+    /// see <see cref="BrickChange"/> for the pair and who may read which.
+    /// </remarks>
     [Flags]
-    public enum DirtyFlags : ushort
+    public enum BrickUpdateFlags : ushort
     {
         None       = 0,
         GeneralAutomata  = 1 << 0,
@@ -37,10 +45,10 @@ namespace Caelix
         public const ushort DirtyFlagsPropagateToNeighbor    = (ushort)0b0100_1111_1111_1111u;
         public const ushort DirtyFlagsCanAllocateLocalBricks = (ushort)0b0000_1111_1111_1111u;
 
-        public const DirtyFlags DefaultSetBlockFlags = (
-            DirtyFlags.GeneralAutomata |
-            DirtyFlags.GeometryWithLocalNeighbor |
-            DirtyFlags.Geometry);
+        public const BrickUpdateFlags DefaultSetBlockFlags = (
+            BrickUpdateFlags.GeneralAutomata |
+            BrickUpdateFlags.GeometryWithLocalNeighbor |
+            BrickUpdateFlags.Geometry);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ushort FilterCanPropagateToAlien(ushort flags)
@@ -77,7 +85,7 @@ namespace Caelix
         [ReadOnly] public SharedHashMap<int3, SectorHandle> sectors;
         [ReadOnly] public SharedHashMap<int3, SectorNeighborHandles> sectorNeighbors;
         [ReadOnly] public NeighborhoodType neighborhoodType;
-        [ReadOnly] public DirtyFlags flagsToPropagate;
+        [ReadOnly] public BrickUpdateFlags flagsToPropagate;
 
         public void Execute(int index)
         {

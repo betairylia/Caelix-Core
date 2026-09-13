@@ -92,10 +92,10 @@ namespace Caelix.Tests
             scope.Set(8, 0, 0);
 
             Assert.That(scope.Handle.IsRendererDirty, Is.False);
-            Assert.That(scope.Sector.sectorDirtyFlags & (ushort)DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(0));
-            Assert.That(scope.DirtyFlagsAt(new int3(1, 0, 0)) & (ushort)DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(0));
+            Assert.That(scope.Sector.sectorDirtyFlags & (ushort)BrickUpdateFlags.BlockBrickAdded, Is.Not.EqualTo(0));
+            Assert.That(scope.DirtyFlagsAt(new int3(1, 0, 0)) & (ushort)BrickUpdateFlags.BlockBrickAdded, Is.Not.EqualTo(0));
 
-            scope.Sector.MarkBrickRequireUpdate(Sector.ToBrickIdx(1, 0, 0), DirtyFlags.BlockBrickAdded);
+            scope.Sector.MarkBrickRequireUpdate(Sector.ToBrickIdx(1, 0, 0), BrickUpdateFlags.BlockBrickAdded);
 
             Assert.That(scope.Handle.IsRendererDirty, Is.True);
         }
@@ -105,7 +105,7 @@ namespace Caelix.Tests
         {
             using var scope = new SectorTestScope();
             scope.Set(8, 0, 0);
-            scope.Sector.MarkBrickRequireUpdate(Sector.ToBrickIdx(1, 0, 0), DirtyFlags.BlockBrickAdded);
+            scope.Sector.MarkBrickRequireUpdate(Sector.ToBrickIdx(1, 0, 0), BrickUpdateFlags.BlockBrickAdded);
 
             scope.Sector.ClearAllRequireUpdateFlags();
 
@@ -118,11 +118,11 @@ namespace Caelix.Tests
             using var scope = new SectorTestScope();
             int brickIdx = Sector.ToBrickIdx(1, 0, 0);
 
-            scope.Sector.MarkBrickRequireUpdate(brickIdx, DirtyFlags.GeneralAutomata);
+            scope.Sector.MarkBrickRequireUpdate(brickIdx, BrickUpdateFlags.GeneralAutomata);
 
             Assert.That(scope.Handle.IsRendererDirty, Is.False);
 
-            scope.Sector.MarkBrickRequireUpdate(brickIdx, DirtyFlags.GeometryWithLocalNeighbor);
+            scope.Sector.MarkBrickRequireUpdate(brickIdx, BrickUpdateFlags.GeometryWithLocalNeighbor);
 
             Assert.That(scope.Handle.IsRendererDirty, Is.True);
         }

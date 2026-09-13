@@ -6,7 +6,7 @@ namespace Caelix
 {
     /// <summary>
     /// Walks the allocated bricks of one entity, yielding each brick's key together with its
-    /// SOURCE dirty flags. Produced by <see cref="VoxelEntityData.EnumerateBrickSourceFlags"/>.
+    /// dirty flags. Produced by <see cref="VoxelEntityData.EnumerateBrickDirtyFlags"/>.
     /// </summary>
     /// <remarks>
     /// Burst-compatible and foreach-able: it implements no <c>IEnumerator</c> interface, so
@@ -14,10 +14,10 @@ namespace Caelix
     /// no job, which is what lets a consumer inside a parallel job use it. Order is storage order —
     /// region order, then brick index order inside a region — and is therefore not a spatial order.
     ///
-    /// See <see cref="VoxelEntityData.EnumerateBrickSourceFlags"/> for who is allowed to read
-    /// source flags at all.
+    /// See <see cref="VoxelEntityData.EnumerateBrickDirtyFlags"/> for who is allowed to read
+    /// dirty flags at all.
     /// </remarks>
-    public unsafe struct BrickSourceFlagsEnumerator
+    public unsafe struct BrickDirtyFlagsEnumerator
     {
         private UnsafeHashMap<int3, SectorHandle>.Enumerator sectorEnumerator;
         private SectorNonEmptyBrickEnumerator brickEnumerator;
@@ -29,13 +29,13 @@ namespace Caelix
         private ushort* dirtyFlags;
 
         private int3 currentSectorPos;
-        private BrickSourceFlags current;
+        private BrickDirtyFlags current;
         private bool inSector;
         private bool finished;
 
         /// <summary>Builds an enumerator over the allocated bricks of <paramref name="sectors"/>.</summary>
-        internal BrickSourceFlagsEnumerator(
-            SharedHashMap<int3, SectorHandle> sectors, DirtyFlags mask, bool dirtyOnly)
+        internal BrickDirtyFlagsEnumerator(
+            SharedHashMap<int3, SectorHandle> sectors, BrickUpdateFlags mask, bool dirtyOnly)
         {
             this.mask = (ushort)mask;
             this.dirtyOnly = dirtyOnly;
@@ -51,10 +51,10 @@ namespace Caelix
 
         /// <summary>Returns this enumerator (enables foreach usage).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public BrickSourceFlagsEnumerator GetEnumerator() => this;
+        public BrickDirtyFlagsEnumerator GetEnumerator() => this;
 
-        /// <summary>The brick the enumerator currently points at, and its masked source flags.</summary>
-        public BrickSourceFlags Current
+        /// <summary>The brick the enumerator currently points at, and its masked dirty flags.</summary>
+        public BrickDirtyFlags Current
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => current;
@@ -81,10 +81,10 @@ namespace Caelix
                             continue;
                         }
 
-                        current = new BrickSourceFlags
+                        current = new BrickDirtyFlags
                         {
                             Key = SectorKeys.FromSector(currentSectorPos, brickIdx),
-                            Flags = (DirtyFlags)flags
+                            Flags = (BrickUpdateFlags)flags
                         };
                         return true;
                     }

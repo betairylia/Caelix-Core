@@ -176,8 +176,8 @@ namespace Caelix
         /// </summary>
         /// <remarks>
         /// Every allocated brick of the attached sector is marked
-        /// <see cref="DirtyFlags.BlockBrickAdded"/>, <see cref="DirtyFlags.Geometry"/> and
-        /// <see cref="DirtyFlags.GeometryWithLocalNeighbor"/>. Replication derives its delta from
+        /// <see cref="BrickUpdateFlags.BlockBrickAdded"/>, <see cref="BrickUpdateFlags.Geometry"/> and
+        /// <see cref="BrickUpdateFlags.GeometryWithLocalNeighbor"/>. Replication derives its delta from
         /// the change list now, so a sector attached with content already in it — a generator
         /// (<c>InfiniteLoader</c>), an importer — must announce its bricks here: nothing else ever
         /// marks them, and the server no longer diffs sector sets per connection. A loader that
@@ -226,8 +226,8 @@ namespace Caelix
                 return;
             }
 
-            const DirtyFlags flags =
-                DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry | DirtyFlags.GeometryWithLocalNeighbor;
+            const BrickUpdateFlags flags =
+                BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.Geometry | BrickUpdateFlags.GeometryWithLocalNeighbor;
 
             ref Sector sector = ref handle.Get();
             foreach (SectorNonEmptyBrickEnumerator.BrickRef brick in sector.EnumerateNonEmptyBricks())
@@ -278,7 +278,7 @@ namespace Caelix
         /// <summary>
         /// The surviving neighbours of a removed sector culled boundary geometry and physics info
         /// against it. Marks the bricks of every surviving sector within one sector step that face
-        /// <paramref name="removedPos"/> dirty with <see cref="DirtyFlags.GeometryWithLocalNeighbor"/>.
+        /// <paramref name="removedPos"/> dirty with <see cref="BrickUpdateFlags.GeometryWithLocalNeighbor"/>.
         /// The direction mask is zero, so the flag reaches only those bricks through propagation and
         /// never creates a sector. On the server the next tick's propagation turns it into the
         /// require-update the physics slot refresh reads; on the client <c>PrepareRender</c> does the
@@ -303,7 +303,7 @@ namespace Caelix
                 {
                     int3 brickPos = Sector.ToBrickPos((short)brick.BrickAbs);
                     if (math.any(axis & (brickPos != boundary))) continue;
-                    sector.MarkBrickDirty(brick.BrickAbs, DirtyFlags.GeometryWithLocalNeighbor, 0);
+                    sector.MarkBrickDirty(brick.BrickAbs, BrickUpdateFlags.GeometryWithLocalNeighbor, 0);
                 }
             }
         }
@@ -397,7 +397,7 @@ namespace Caelix
         /// <summary>
         /// Propagates dirty flags to neighbors. Iterates ALL sectors, pulls dirty flags from neighbors.
         /// </summary>
-        public JobHandle PropagateDirtyFlags(DirtyFlags flagsToPropagate = DirtyFlags.All, bool async = false)
+        public JobHandle PropagateDirtyFlags(BrickUpdateFlags flagsToPropagate = BrickUpdateFlags.All, bool async = false)
         {
             if (sectors.Count == 0) return default;
 
@@ -439,7 +439,7 @@ namespace Caelix
         /// only dirty flags allowed to allocate local sectors create missing neighbors.
         /// Must be called from main thread (not thread-safe).
         /// </summary>
-        private void EnsureNeighborSectorsForDirtyBoundaries(DirtyFlags flagsToPropagate)
+        private void EnsureNeighborSectorsForDirtyBoundaries(BrickUpdateFlags flagsToPropagate)
         {
             ushort requestedFlags = (ushort)flagsToPropagate;
             ushort allocationFlags = DirtyPropagationSettings.FilterCanAllocateLocalBricks(

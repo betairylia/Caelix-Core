@@ -221,8 +221,8 @@ namespace Caelix
                 {
                     Key = SectorKeys.FromSector(sectorPos, brick.BrickAbs),
                     Kind = ChangeKind.Removed,
-                    SourceFlags = DirtyFlags.BlockBrickRemoved,
-                    RequiredFlags = DirtyFlags.BlockBrickRemoved
+                    DirtyFlags = BrickUpdateFlags.BlockBrickRemoved,
+                    RequireUpdateFlags = BrickUpdateFlags.BlockBrickRemoved
                 });
             }
         }
@@ -255,8 +255,8 @@ namespace Caelix
                     {
                         Key = SectorKeys.FromSector(sectorEntry.Key, brick.BrickAbs),
                         Kind = ChangeKind.Updated,
-                        SourceFlags = (DirtyFlags)dirty,
-                        RequiredFlags = (DirtyFlags)required
+                        DirtyFlags = (BrickUpdateFlags)dirty,
+                        RequireUpdateFlags = (BrickUpdateFlags)required
                     });
                 }
             }

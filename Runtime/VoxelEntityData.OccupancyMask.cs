@@ -14,14 +14,14 @@ namespace Caelix
         /// only its own aux, so parallel execution is race free.
         ///
         /// Gating: a sector is (re)built when its aux is missing (first tick / freshly loaded) or
-        /// when it carries the self-only <see cref="DirtyFlags.Geometry"/> require-update flag.
+        /// when it carries the self-only <see cref="BrickUpdateFlags.Geometry"/> require-update flag.
         /// Occupancy depends only on a brick's own blocks, so unlike physics it needs no neighbor
         /// halo — the self-only flag (bit set only on bricks whose own blocks changed) is exact. A
         /// missing-aux sector rebuilds every non-empty brick; otherwise only the require-update
         /// bricks are re-marked, leaving untouched bricks' masks (carried through the snapshot clone)
         /// intact. Must run after snapshots are applied, so it reads settled Block data.
         /// </summary>
-        public void RefreshNonEmptyMask(DirtyFlags dirtyMask = DirtyFlags.Geometry)
+        public void RefreshNonEmptyMask(BrickUpdateFlags dirtyMask = BrickUpdateFlags.Geometry)
         {
             if (sectors.Count == 0) { return; }
 

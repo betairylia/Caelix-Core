@@ -27,7 +27,7 @@ namespace Caelix
     internal struct SectorRequiredUpdateBrickEnumerator : IEnumerator<BrickIterator>
     {
         private Sector sector;
-        private DirtyFlags flagMask;
+        private BrickUpdateFlags flagMask;
         private bool includeEmpty;
 
         private int bX, bY, bZ;
@@ -40,7 +40,7 @@ namespace Caelix
         /// Constructs a new sector enumerator for the specified sector.
         /// </summary>
         /// <param name="sector">The sector to enumerate.</param>
-        public SectorRequiredUpdateBrickEnumerator(Sector sector, DirtyFlags mask, bool includeEmpty)
+        public SectorRequiredUpdateBrickEnumerator(Sector sector, BrickUpdateFlags mask, bool includeEmpty)
         {
             this.sector = sector;
 
@@ -155,7 +155,7 @@ namespace Caelix
     internal struct DirtyBrickInfo
     {
         public short BrickIdx;
-        public DirtyFlags Flags;
+        public BrickUpdateFlags Flags;
     }
 
     /// <summary>
@@ -180,11 +180,11 @@ namespace Caelix
     internal unsafe struct SectorDirtyBrickEnumerator
     {
         private Sector sector;
-        private DirtyFlags mask;
+        private BrickUpdateFlags mask;
         private SectorNonEmptyBrickEnumerator nonEmptyBricks;
         private DirtyBrickInfo current;
 
-        public SectorDirtyBrickEnumerator(Sector sector, DirtyFlags mask)
+        public SectorDirtyBrickEnumerator(Sector sector, BrickUpdateFlags mask)
         {
             this.sector = sector;
             this.mask = mask;
@@ -211,7 +211,7 @@ namespace Caelix
                     current = new DirtyBrickInfo
                     {
                         BrickIdx = (short)brickIdx,
-                        Flags = (DirtyFlags)flags
+                        Flags = (BrickUpdateFlags)flags
                     };
                     return true;
                 }

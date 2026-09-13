@@ -37,7 +37,7 @@ namespace Caelix.IO
     public static class WorldLoader
     {
         public const ushort FirstFrameUploadFlags =
-            (ushort)(DirtyFlags.BlockBrickAdded | DirtyFlags.GeometryWithLocalNeighbor | DirtyFlags.Geometry);
+            (ushort)(BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.GeometryWithLocalNeighbor | BrickUpdateFlags.Geometry);
 
         public static void Load(string path, IWorldLoadTarget target)
         {

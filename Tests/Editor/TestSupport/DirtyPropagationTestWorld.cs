@@ -31,13 +31,13 @@ namespace Caelix.Tests.TestSupport
             return this;
         }
 
-        public DirtyPropagationTestWorld MarkBrickDirty(int3 brickPos, DirtyFlags flags, uint directionMask = 0xFFFFFFFF)
+        public DirtyPropagationTestWorld MarkBrickDirty(int3 brickPos, BrickUpdateFlags flags, uint directionMask = 0xFFFFFFFF)
         {
             Center.Get().MarkBrickDirty(Caelix.Sector.ToBrickIdx(brickPos.x, brickPos.y, brickPos.z), flags, directionMask);
             return this;
         }
 
-        public void Propagate(DirtyFlags flags = DirtyFlags.GeneralAutomata)
+        public void Propagate(BrickUpdateFlags flags = BrickUpdateFlags.GeneralAutomata)
         {
             entity.Data.PropagateDirtyFlags(flags).Complete();
         }

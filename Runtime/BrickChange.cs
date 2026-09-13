@@ -17,10 +17,10 @@ namespace Caelix
     /// One brick of an entity that changed or needs work in the current cycle.
     /// </summary>
     /// <remarks>
-    /// One entry per key per cycle. <see cref="SourceFlags"/> is what changed in THIS brick (the
-    /// brick's own dirty flags); <see cref="RequiredFlags"/> is the work the brick needs after
+    /// One entry per key per cycle. <see cref="DirtyFlags"/> is what changed in THIS brick (the
+    /// brick's own dirty flags); <see cref="RequireUpdateFlags"/> is the work the brick needs after
     /// propagation (its require-update flags). One voxel edit at the edge of brick A gives A both
-    /// fields and its neighbour B only <see cref="RequiredFlags"/>: replication sends A, the
+    /// fields and its neighbour B only <see cref="RequireUpdateFlags"/>: replication sends A, the
     /// renderer rebuilds A and B. One flags field cannot express both.
     /// </remarks>
     public struct BrickChange
@@ -32,10 +32,10 @@ namespace Caelix
         public ChangeKind Kind;
 
         /// <summary>The brick's own dirty flags: what changed inside it.</summary>
-        public DirtyFlags SourceFlags;
+        public BrickUpdateFlags DirtyFlags;
 
         /// <summary>The brick's require-update flags after propagation: what work it needs.</summary>
-        public DirtyFlags RequiredFlags;
+        public BrickUpdateFlags RequireUpdateFlags;
     }
 
     /// <summary>
@@ -56,7 +56,7 @@ namespace Caelix
         public int3 Key;
 
         /// <summary>The brick's require-update flags after propagation.</summary>
-        public DirtyFlags Flags;
+        public BrickUpdateFlags Flags;
 
         /// <summary>The entity's pose at the time the record was collected.</summary>
         public RigidTransform LocalToWorld;

@@ -99,10 +99,10 @@ namespace Caelix.Tests
                     "non-replicated slot must not arrive");
 
                 ushort dirty = DirtyAt(target, key);
-                Assert.That(dirty & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.GeneralAutomata, Is.EqualTo(0),
+                Assert.That(dirty & (ushort)BrickUpdateFlags.Geometry, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)BrickUpdateFlags.BlockBrickAdded, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)BrickUpdateFlags.GeneralAutomata, Is.EqualTo(0),
                     "replica must not trigger automata");
 
                 // The record is exact: one byte short of it is a truncated message that applies nothing.
@@ -138,8 +138,8 @@ namespace Caelix.Tests
 
                 Assert.That(target.GetBlock(new int3(1, 1, 1)).isEmpty, Is.True);
                 Assert.That(target.GetBlock(new int3(2, 2, 2)), Is.EqualTo(new Block(0x8003)));
-                Assert.That(DirtyAt(target, key) & (ushort)DirtyFlags.BlockBrickAdded, Is.EqualTo(0));
-                Assert.That(DirtyAt(target, key) & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
+                Assert.That(DirtyAt(target, key) & (ushort)BrickUpdateFlags.BlockBrickAdded, Is.EqualTo(0));
+                Assert.That(DirtyAt(target, key) & (ushort)BrickUpdateFlags.Geometry, Is.Not.EqualTo(0));
             }
             finally
             {
@@ -354,11 +354,11 @@ namespace Caelix.Tests
                 Assert.That(change.Key, Is.EqualTo(removedKey));
 
                 ushort dirty = DirtyAt(data, removedKey);
-                Assert.That(dirty & (ushort)DirtyFlags.BlockBrickRemoved, Is.Not.EqualTo(0));
-                Assert.That(dirty & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)BrickUpdateFlags.BlockBrickRemoved, Is.Not.EqualTo(0));
+                Assert.That(dirty & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
 
-                data.PropagateDirtyFlags(DirtyFlags.GeometryWithLocalNeighbor).Complete();
-                Assert.That(RequireAt(data, neighbourKey) & (ushort)DirtyFlags.GeometryWithLocalNeighbor,
+                data.PropagateDirtyFlags(BrickUpdateFlags.GeometryWithLocalNeighbor).Complete();
+                Assert.That(RequireAt(data, neighbourKey) & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor,
                     Is.Not.EqualTo(0), "a freed brick index still re-renders its neighbours");
             }
             finally
@@ -388,7 +388,7 @@ namespace Caelix.Tests
                 Assert.That(data.ChangeCount, Is.EqualTo(1));
                 Assert.That(data.GetChange(0).Kind, Is.EqualTo(ChangeKind.Removed));
                 Assert.That(data.GetChange(0).Key, Is.EqualTo(removedKey));
-                Assert.That(DirtyAt(data, survivor) & (ushort)DirtyFlags.GeometryWithLocalNeighbor,
+                Assert.That(DirtyAt(data, survivor) & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor,
                     Is.Not.EqualTo(0), "the surviving boundary was marked by the sector removal");
             }
             finally
@@ -431,7 +431,7 @@ namespace Caelix.Tests
                 BrickChange updated = data.GetChange(1);
                 Assert.That(updated.Kind, Is.EqualTo(ChangeKind.Updated));
                 Assert.That(updated.Key, Is.EqualTo(key));
-                Assert.That(updated.SourceFlags & DirtyFlags.BlockBrickAdded, Is.Not.EqualTo(DirtyFlags.None));
+                Assert.That(updated.DirtyFlags & BrickUpdateFlags.BlockBrickAdded, Is.Not.EqualTo(BrickUpdateFlags.None));
             }
             finally
             {

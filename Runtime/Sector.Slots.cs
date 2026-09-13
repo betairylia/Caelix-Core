@@ -556,7 +556,7 @@ namespace Caelix
                     // Record the addition for Block slot
                     if (slotId == SectorSlotId.Block)
                     {
-                        MarkBrickDirty(brickIdx, DirtyFlags.BlockBrickAdded, 0);
+                        MarkBrickDirty(brickIdx, BrickUpdateFlags.BlockBrickAdded, 0);
                     }
                 }
 
@@ -595,9 +595,9 @@ namespace Caelix
             }
 
             // Set the data
-            DirtyFlags dirtyFlags = slotId == SectorSlotId.Block
+            BrickUpdateFlags dirtyFlags = slotId == SectorSlotId.Block
                 ? DirtyPropagationSettings.DefaultSetBlockFlags
-                : DirtyFlags.GeneralAutomata;
+                : BrickUpdateFlags.GeneralAutomata;
             MarkBrickDirty(brickIdx, dirtyFlags, GetVoxelPropagationMask(voxelIdx));
 
             // Update AABB

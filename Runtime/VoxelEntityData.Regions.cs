@@ -43,8 +43,8 @@ namespace Caelix
         /// <summary>
         /// Takes ownership of a DETACHED region built by a generator and installs it at its own
         /// region position. Every allocated brick it brought is marked
-        /// <see cref="DirtyFlags.BlockBrickAdded"/>, <see cref="DirtyFlags.Geometry"/> and
-        /// <see cref="DirtyFlags.GeometryWithLocalNeighbor"/>, so the change list announces it; see
+        /// <see cref="BrickUpdateFlags.BlockBrickAdded"/>, <see cref="BrickUpdateFlags.Geometry"/> and
+        /// <see cref="BrickUpdateFlags.GeometryWithLocalNeighbor"/>, so the change list announces it; see
         /// the remarks on <see cref="AddSectorAt"/>.
         /// </summary>
         /// <exception cref="InvalidOperationException">

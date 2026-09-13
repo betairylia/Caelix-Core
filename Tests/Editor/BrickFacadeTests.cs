@@ -202,35 +202,35 @@ namespace Caelix.Tests
             // The change list only names ALLOCATED bricks, so the neighbour has to hold storage
             // before it can be listed. Round one allocates it and its dirtiness is then cleared.
             scope.Data.SetBlock(new int3(12, 3, 3), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
 
             // Round two: one voxel at the +X face of brick A.
             scope.Data.SetBlock(new int3(7, 3, 3), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.BuildChangeList();
 
             BrickChange source = SingleChange(scope.Data, new int3(0, 0, 0));
             Assert.That(source.Kind, Is.EqualTo(ChangeKind.Updated));
-            Assert.That(source.SourceFlags & DirtyFlags.Geometry, Is.EqualTo(DirtyFlags.Geometry));
+            Assert.That(source.DirtyFlags & BrickUpdateFlags.Geometry, Is.EqualTo(BrickUpdateFlags.Geometry));
             Assert.That(
-                source.RequiredFlags & DirtyFlags.GeometryWithLocalNeighbor,
-                Is.EqualTo(DirtyFlags.GeometryWithLocalNeighbor));
+                source.RequireUpdateFlags & BrickUpdateFlags.GeometryWithLocalNeighbor,
+                Is.EqualTo(BrickUpdateFlags.GeometryWithLocalNeighbor));
 
             BrickChange neighbour = SingleChange(scope.Data, new int3(1, 0, 0));
             Assert.That(neighbour.Kind, Is.EqualTo(ChangeKind.Updated));
-            Assert.That(neighbour.SourceFlags, Is.EqualTo(DirtyFlags.None));
+            Assert.That(neighbour.DirtyFlags, Is.EqualTo(BrickUpdateFlags.None));
             Assert.That(
-                neighbour.RequiredFlags & DirtyFlags.GeometryWithLocalNeighbor,
-                Is.EqualTo(DirtyFlags.GeometryWithLocalNeighbor));
+                neighbour.RequireUpdateFlags & BrickUpdateFlags.GeometryWithLocalNeighbor,
+                Is.EqualTo(BrickUpdateFlags.GeometryWithLocalNeighbor));
 
             scope.Data.ClearChanges();
             Assert.That(scope.Data.ChangeCount, Is.EqualTo(0));
 
             scope.Data.ClearDirtyFlags();
             scope.Data.ClearRequireUpdates();
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.BuildChangeList();
             Assert.That(scope.Data.ChangeCount, Is.EqualTo(0));
         }
@@ -243,7 +243,7 @@ namespace Caelix.Tests
 
             scope.Data.SetBlock(new int3(1, 1, 1), Solid());
             scope.Data.SetBlock(new int3(200, 200, 200), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.BuildChangeList();
 
             NativeArray<BrickChange>.ReadOnly changes = scope.Data.Changes;
@@ -252,8 +252,8 @@ namespace Caelix.Tests
             {
                 Assert.That(changes[i].Key, Is.EqualTo(scope.Data.GetChange(i).Key));
                 Assert.That(changes[i].Kind, Is.EqualTo(scope.Data.GetChange(i).Kind));
-                Assert.That(changes[i].SourceFlags, Is.EqualTo(scope.Data.GetChange(i).SourceFlags));
-                Assert.That(changes[i].RequiredFlags, Is.EqualTo(scope.Data.GetChange(i).RequiredFlags));
+                Assert.That(changes[i].DirtyFlags, Is.EqualTo(scope.Data.GetChange(i).DirtyFlags));
+                Assert.That(changes[i].RequireUpdateFlags, Is.EqualTo(scope.Data.GetChange(i).RequireUpdateFlags));
             }
 
             scope.Data.ClearChanges();
@@ -280,8 +280,8 @@ namespace Caelix.Tests
                 BrickChange change = scope.Data.GetChange(i);
                 Assert.That(change.Kind, Is.EqualTo(ChangeKind.Removed));
                 Assert.That(
-                    change.RequiredFlags & DirtyFlags.BlockBrickRemoved,
-                    Is.EqualTo(DirtyFlags.BlockBrickRemoved));
+                    change.RequireUpdateFlags & BrickUpdateFlags.BlockBrickRemoved,
+                    Is.EqualTo(BrickUpdateFlags.BlockBrickRemoved));
                 removed.Add(change.Key);
             }
 
@@ -315,10 +315,10 @@ namespace Caelix.Tests
                     BrickChange change = SingleChange(scope.Data, key);
                     Assert.That(change.Kind, Is.EqualTo(ChangeKind.Updated));
                     Assert.That(
-                        change.SourceFlags & (DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry |
-                                              DirtyFlags.GeometryWithLocalNeighbor),
-                        Is.EqualTo(DirtyFlags.BlockBrickAdded | DirtyFlags.Geometry |
-                                   DirtyFlags.GeometryWithLocalNeighbor));
+                        change.DirtyFlags & (BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.Geometry |
+                                              BrickUpdateFlags.GeometryWithLocalNeighbor),
+                        Is.EqualTo(BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.Geometry |
+                                   BrickUpdateFlags.GeometryWithLocalNeighbor));
                 }
             }
             finally
@@ -335,7 +335,7 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(1, 1, 1), Solid());          // brick (0,0,0)
             scope.Data.SetBlock(new int3(200, 200, 200), Solid());    // brick (25,25,25)
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
 
             scope.Data.BuildChangeList();
 
@@ -350,7 +350,7 @@ namespace Caelix.Tests
         {
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(1, 1, 1), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
             scope.Data.BuildChangeList();
 
             EntityDataTestScope captured = scope;
@@ -370,13 +370,13 @@ namespace Caelix.Tests
             using var scope = new EntityDataTestScope();
             scope.Data.SetBlock(new int3(7, 7, 7), Solid());
             scope.Data.SetBlock(new int3(200, 200, 200), Solid());
-            scope.Data.PropagateDirtyFlags(DirtyFlags.All).Complete();
+            scope.Data.PropagateDirtyFlags(BrickUpdateFlags.All).Complete();
 
             var expected = new Dictionary<int3, ushort>();
             foreach (var sectorEntry in scope.Data.sectors)
             {
                 ref Sector sector = ref sectorEntry.Value.Get();
-                var enumerator = new SectorRequiredUpdateBrickEnumerator(sector, DirtyFlags.All, includeEmpty);
+                var enumerator = new SectorRequiredUpdateBrickEnumerator(sector, BrickUpdateFlags.All, includeEmpty);
                 foreach (BrickIterator brick in enumerator)
                 {
                     int3 brickPos = brick.position >> BrickKey.Shift;
@@ -387,7 +387,7 @@ namespace Caelix.Tests
             }
 
             using var collected = new NativeList<RequiredBrick>(Allocator.Persistent);
-            scope.Data.CollectRequiredBricks(scope.Data.Guid, DirtyFlags.All, includeEmpty, collected);
+            scope.Data.CollectRequiredBricks(scope.Data.Guid, BrickUpdateFlags.All, includeEmpty, collected);
 
             Assert.That(collected.Length, Is.EqualTo(expected.Count));
             for (int i = 0; i < collected.Length; i++)

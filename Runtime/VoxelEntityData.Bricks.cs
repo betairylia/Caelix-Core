@@ -8,19 +8,19 @@ using Caelix.Utils;
 
 namespace Caelix
 {
-    /// <summary>One brick's key together with its SOURCE dirty flags.</summary>
+    /// <summary>One brick's key together with its dirty flags.</summary>
     /// <remarks>
-    /// Produced by <see cref="VoxelEntityData.EnumerateBrickSourceFlags"/>. <c>Flags</c> is the
+    /// Produced by <see cref="VoxelEntityData.EnumerateBrickDirtyFlags"/>. <c>Flags</c> is the
     /// brick's own dirty flags masked by the enumeration's mask, so it can be zero when the
     /// enumeration was not restricted to dirty bricks.
     /// </remarks>
-    public struct BrickSourceFlags
+    public struct BrickDirtyFlags
     {
         /// <summary>Entity-local brick key. See <see cref="BrickKey"/>.</summary>
         public int3 Key;
 
         /// <summary>The brick's own dirty flags, masked.</summary>
-        public DirtyFlags Flags;
+        public BrickUpdateFlags Flags;
     }
 
     /// <summary>
@@ -159,22 +159,22 @@ namespace Caelix
             => new BrickKeyEnumerator(sectors, new int3(int.MinValue), new int3(int.MaxValue));
 
         /// <summary>
-        /// Allocated bricks with their SOURCE dirty flags. Never allocates and runs no job, so a
+        /// Allocated bricks with their dirty flags. Never allocates and runs no job, so a
         /// consumer inside a parallel job can use it.
         /// </summary>
         /// <param name="mask">Flags to keep; the yielded <c>Flags</c> are masked by it.</param>
         /// <param name="dirtyOnly">
-        /// True yields only the bricks whose masked source flags are non-zero (whole clean regions
+        /// True yields only the bricks whose masked dirty flags are non-zero (whole clean regions
         /// are skipped); false yields every allocated brick, with flags that may be zero.
         /// </param>
         /// <remarks>
-        /// This is the bridge-phase reader of SOURCE dirty flags — only alien propagation and
+        /// This is the bridge-phase reader of the dirty flags — only alien propagation and
         /// replication may read those, and only from inside the tick, after propagation and before
         /// the end-of-tick clear. Everything else reads <see cref="GetRequiredFlags"/>,
         /// <see cref="CollectRequiredBricks"/> or <see cref="Changes"/>.
         /// </remarks>
-        public BrickSourceFlagsEnumerator EnumerateBrickSourceFlags(DirtyFlags mask, bool dirtyOnly)
-            => new BrickSourceFlagsEnumerator(sectors, mask, dirtyOnly);
+        public BrickDirtyFlagsEnumerator EnumerateBrickDirtyFlags(BrickUpdateFlags mask, bool dirtyOnly)
+            => new BrickDirtyFlagsEnumerator(sectors, mask, dirtyOnly);
 
         /// <summary>
         /// Enumerates the values of one brick's slot selected by that slot's per-brick bitmap aux
@@ -271,18 +271,18 @@ namespace Caelix
         /// defined for unallocated brick positions too, because a neighbour can flag a position
         /// that holds no storage yet.
         /// </remarks>
-        public DirtyFlags GetRequiredFlags(int3 key)
+        public BrickUpdateFlags GetRequiredFlags(int3 key)
         {
             if (!sectors.TryGetValue(SectorKeys.ToSectorPos(key), out SectorHandle handle) || handle.IsNull)
             {
-                return DirtyFlags.None;
+                return BrickUpdateFlags.None;
             }
 
-            return (DirtyFlags)handle.Get().brickRequireUpdateFlags[SectorKeys.ToBrickIdx(key)];
+            return (BrickUpdateFlags)handle.Get().brickRequireUpdateFlags[SectorKeys.ToBrickIdx(key)];
         }
 
         /// <summary>
-        /// Marks a brick position as dirty: the SOURCE side, which the next propagation turns into
+        /// Marks a brick position as dirty: the dirty side, which the next propagation turns into
         /// the require-update flags of this brick and its neighbours. Never allocates; no-op when no
         /// region holds the key.
         /// </summary>
@@ -297,7 +297,7 @@ namespace Caelix
         /// never asks whether a brick still exists, so a position whose storage was just freed can
         /// still tell its neighbours to rebuild.
         /// </remarks>
-        public void MarkBrickDirty(int3 key, DirtyFlags flags, uint directionMask = 0xFFFFFFFF)
+        public void MarkBrickDirty(int3 key, BrickUpdateFlags flags, uint directionMask = 0xFFFFFFFF)
         {
             if (!sectors.TryGetValue(SectorKeys.ToSectorPos(key), out SectorHandle handle) || handle.IsNull)
             {
@@ -313,7 +313,7 @@ namespace Caelix
         /// </summary>
         /// <returns>True when the brick existed and was marked.</returns>
         /// <remarks>For external markers such as alien propagation, which have already decided their targets.</remarks>
-        public bool MarkRequired(int3 key, DirtyFlags flags)
+        public bool MarkRequired(int3 key, BrickUpdateFlags flags)
         {
             if (!sectors.TryGetValue(SectorKeys.ToSectorPos(key), out SectorHandle handle) || handle.IsNull)
             {
@@ -433,7 +433,7 @@ namespace Caelix
         /// </param>
         /// <param name="into">Destination list. Entries are appended, never cleared. Allocated with TempJob or Persistent, never Temp: the collector is a job, and a Temp container cannot be scheduled.</param>
         public void CollectRequiredBricks(
-            Guid128 entityId, DirtyFlags mask, bool includeEmpty, NativeList<RequiredBrick> into)
+            Guid128 entityId, BrickUpdateFlags mask, bool includeEmpty, NativeList<RequiredBrick> into)
         {
             if (!sectors.IsCreated || !into.IsCreated)
             {
@@ -465,7 +465,7 @@ namespace Caelix
         public Guid128 entityId;
 
         /// <summary>Require-update flags to select on.</summary>
-        public DirtyFlags mask;
+        public BrickUpdateFlags mask;
 
         /// <summary>Visit unallocated brick positions too.</summary>
         public bool includeEmpty;
@@ -488,7 +488,7 @@ namespace Caelix
                     {
                         Entity = entityId,
                         Key = SectorKeys.FromSector(sectorEntry.Key, brickIdxAbs),
-                        Flags = (DirtyFlags)sector.brickRequireUpdateFlags[brickIdxAbs],
+                        Flags = (BrickUpdateFlags)sector.brickRequireUpdateFlags[brickIdxAbs],
                         LocalToWorld = data.transform
                     });
                 }

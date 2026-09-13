@@ -154,8 +154,8 @@ namespace Caelix.Tests
                     BrickChange change = SingleChange(scope.Data, key);
                     Assert.That(change.Kind, Is.EqualTo(ChangeKind.Updated));
                     Assert.That(
-                        change.SourceFlags & DirtyFlags.BlockBrickAdded,
-                        Is.EqualTo(DirtyFlags.BlockBrickAdded));
+                        change.DirtyFlags & BrickUpdateFlags.BlockBrickAdded,
+                        Is.EqualTo(BrickUpdateFlags.BlockBrickAdded));
                 }
             }
             finally

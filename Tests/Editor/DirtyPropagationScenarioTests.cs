@@ -14,7 +14,7 @@ namespace Caelix.Tests
 
             world.SetBlock(64, 64, 64).Propagate();
 
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(8, 8, 8)) & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(8, 8, 8)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
         }
 
         [Test]
@@ -24,7 +24,7 @@ namespace Caelix.Tests
 
             world.SetBlock(7, 7, 7).Propagate();
 
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(1, 1, 1)) & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(1, 1, 1)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
         }
 
         [Test]
@@ -35,7 +35,7 @@ namespace Caelix.Tests
 
             world.SetBlock(127, 64, 64).Propagate();
 
-            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
         }
 
         [Test]
@@ -46,7 +46,7 @@ namespace Caelix.Tests
             world.SetBlock(127, 64, 64).Propagate();
 
             Assert.That(world.Data.sectors.ContainsKey(new int3(1, 0, 0)), Is.True);
-            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
         }
 
         [Test]
@@ -55,10 +55,10 @@ namespace Caelix.Tests
             using var world = new DirtyPropagationTestWorld();
             uint positiveXOnly = 1u << NeighborhoodSettings.DirectionToIndexMinusOne(new int3(1, 0, 0));
 
-            world.MarkBrickDirty(new int3(5, 5, 5), DirtyFlags.GeneralAutomata, positiveXOnly).Propagate();
+            world.MarkBrickDirty(new int3(5, 5, 5), BrickUpdateFlags.GeneralAutomata, positiveXOnly).Propagate();
 
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(6, 5, 5)) & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(4, 5, 5)) & (ushort)DirtyFlags.GeneralAutomata, Is.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(6, 5, 5)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(4, 5, 5)) & (ushort)BrickUpdateFlags.GeneralAutomata, Is.EqualTo(0));
         }
 
         [Test]
@@ -66,15 +66,15 @@ namespace Caelix.Tests
         {
             using var world = new DirtyPropagationTestWorld();
 
-            world.MarkBrickDirty(new int3(5, 5, 5), DirtyFlags.GeneralAutomata | DirtyFlags.Reserved1).Propagate(DirtyFlags.GeneralAutomata);
+            world.MarkBrickDirty(new int3(5, 5, 5), BrickUpdateFlags.GeneralAutomata | BrickUpdateFlags.Reserved1).Propagate(BrickUpdateFlags.GeneralAutomata);
 
             ushort flags = world.RequireFlagsAt(new int3(0, 0, 0), new int3(6, 5, 5));
-            Assert.That(flags & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
-            Assert.That(flags & (ushort)DirtyFlags.Reserved1, Is.EqualTo(0));
+            Assert.That(flags & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(flags & (ushort)BrickUpdateFlags.Reserved1, Is.EqualTo(0));
 
             ushort selfFlags = world.RequireFlagsAt(new int3(0, 0, 0), new int3(5, 5, 5));
-            Assert.That(selfFlags & (ushort)DirtyFlags.GeneralAutomata, Is.Not.EqualTo(0));
-            Assert.That(selfFlags & (ushort)DirtyFlags.Reserved1, Is.EqualTo(0));
+            Assert.That(selfFlags & (ushort)BrickUpdateFlags.GeneralAutomata, Is.Not.EqualTo(0));
+            Assert.That(selfFlags & (ushort)BrickUpdateFlags.Reserved1, Is.EqualTo(0));
         }
 
         [Test]
@@ -82,10 +82,10 @@ namespace Caelix.Tests
         {
             using var world = new DirtyPropagationTestWorld();
 
-            world.MarkBrickDirty(new int3(5, 5, 5), DirtyFlags.Geometry).Propagate(DirtyFlags.Geometry);
+            world.MarkBrickDirty(new int3(5, 5, 5), BrickUpdateFlags.Geometry).Propagate(BrickUpdateFlags.Geometry);
 
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(5, 5, 5)) & (ushort)DirtyFlags.Geometry, Is.Not.EqualTo(0));
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(6, 5, 5)) & (ushort)DirtyFlags.Geometry, Is.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(5, 5, 5)) & (ushort)BrickUpdateFlags.Geometry, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(6, 5, 5)) & (ushort)BrickUpdateFlags.Geometry, Is.EqualTo(0));
         }
 
         [Test]
@@ -94,9 +94,9 @@ namespace Caelix.Tests
             using var world = new DirtyPropagationTestWorld();
             world.AddSector(new int3(1, 0, 0));
 
-            world.MarkBrickDirty(new int3(15, 8, 8), DirtyFlags.GeometryWithLocalNeighbor).Propagate(DirtyFlags.GeometryWithLocalNeighbor);
+            world.MarkBrickDirty(new int3(15, 8, 8), BrickUpdateFlags.GeometryWithLocalNeighbor).Propagate(BrickUpdateFlags.GeometryWithLocalNeighbor);
 
-            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(1, 0, 0), new int3(0, 8, 8)) & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
         }
 
         [Test]
@@ -104,7 +104,7 @@ namespace Caelix.Tests
         {
             using var world = new DirtyPropagationTestWorld();
 
-            world.MarkBrickDirty(new int3(15, 8, 8), DirtyFlags.GeometryWithLocalNeighbor).Propagate(DirtyFlags.GeometryWithLocalNeighbor);
+            world.MarkBrickDirty(new int3(15, 8, 8), BrickUpdateFlags.GeometryWithLocalNeighbor).Propagate(BrickUpdateFlags.GeometryWithLocalNeighbor);
 
             Assert.That(world.Data.sectors.ContainsKey(new int3(1, 0, 0)), Is.False);
         }
@@ -118,15 +118,15 @@ namespace Caelix.Tests
             world.SetBlock(64, 64, 64);  // sector (0,0,0), brick (8,8,8): interior
             // The helper writes into the center sector, so the removed sector is filled directly.
             world.SectorAt(new int3(1, 0, 0)).SetBlock(64, 64, 64, new Block(1));
-            world.Propagate(DirtyFlags.All);
+            world.Propagate(BrickUpdateFlags.All);
             world.Data.ClearDirtyFlags();
             world.Data.ClearRequireUpdates();
 
             world.Data.RemoveSectorAt(new int3(1, 0, 0));
-            world.Propagate(DirtyFlags.GeometryWithLocalNeighbor);
+            world.Propagate(BrickUpdateFlags.GeometryWithLocalNeighbor);
 
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(15, 8, 8)) & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
-            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(8, 8, 8)) & (ushort)DirtyFlags.GeometryWithLocalNeighbor, Is.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(15, 8, 8)) & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.Not.EqualTo(0));
+            Assert.That(world.RequireFlagsAt(new int3(0, 0, 0), new int3(8, 8, 8)) & (ushort)BrickUpdateFlags.GeometryWithLocalNeighbor, Is.EqualTo(0));
             Assert.That(world.Data.sectors.ContainsKey(new int3(1, 0, 0)), Is.False);
             Assert.That(world.Data.sectors.Count, Is.EqualTo(1), "removal must not create sectors");
         }
@@ -136,7 +136,7 @@ namespace Caelix.Tests
         {
             using var world = new DirtyPropagationTestWorld();
 
-            world.MarkBrickDirty(new int3(15, 8, 8), DirtyFlags.GeneralAutomata, 0);
+            world.MarkBrickDirty(new int3(15, 8, 8), BrickUpdateFlags.GeneralAutomata, 0);
 
             Assert.DoesNotThrow(() => world.Propagate());
         }

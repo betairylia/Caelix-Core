@@ -33,25 +33,25 @@ namespace Caelix.Net
     {
         /// <summary>
         /// Dirty bits that mean "the Block slot of this brick changed this cycle". The Block slot is
-        /// the only writer that sets <see cref="DirtyFlags.Geometry"/>.
+        /// the only writer that sets <see cref="BrickUpdateFlags.Geometry"/>.
         /// </summary>
-        public const DirtyFlags ReplicationDirtyMask =
-            DirtyFlags.Geometry | DirtyFlags.BlockBrickAdded | DirtyFlags.BlockBrickRemoved;
+        public const BrickUpdateFlags ReplicationDirtyMask =
+            BrickUpdateFlags.Geometry | BrickUpdateFlags.BlockBrickAdded | BrickUpdateFlags.BlockBrickRemoved;
 
         /// <summary>
         /// Dirty bits the client marks on an applied brick so its renderer refreshes. These bits
         /// cannot allocate sectors during propagation (see <see cref="DirtyPropagationSettings"/>).
         /// </summary>
-        public const DirtyFlags ReplicationApplyFlags =
-            DirtyFlags.Geometry | DirtyFlags.GeometryWithLocalNeighbor;
+        public const BrickUpdateFlags ReplicationApplyFlags =
+            BrickUpdateFlags.Geometry | BrickUpdateFlags.GeometryWithLocalNeighbor;
 
         /// <summary>
         /// Dirty bits a removed brick's index keeps so propagation re-renders its 26 neighbours.
-        /// <see cref="DirtyFlags.GeometryWithLocalNeighbor"/> is the one that travels; it cannot
+        /// <see cref="BrickUpdateFlags.GeometryWithLocalNeighbor"/> is the one that travels; it cannot
         /// allocate storage, so the mark never grows a phantom sector.
         /// </summary>
-        public const DirtyFlags ReplicationRemoveFlags =
-            DirtyFlags.BlockBrickRemoved | DirtyFlags.GeometryWithLocalNeighbor;
+        public const BrickUpdateFlags ReplicationRemoveFlags =
+            BrickUpdateFlags.BlockBrickRemoved | BrickUpdateFlags.GeometryWithLocalNeighbor;
 
         /// <summary>The default replicated slot mask: Block only.</summary>
         public const ushort DefaultReplicatedSlotMask = 1 << (int)SectorSlotId.Block;
