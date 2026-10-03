@@ -13,13 +13,8 @@ model before changing traversal or allocation.
 | Understand tick phases | [Tick and dirty propagation](https://github.com/betairylia/Caelix/blob/main/Documentation~/internals/tick-and-dirty.md) |
 | Write or update documentation | [Shared documentation guide](https://github.com/betairylia/Caelix/blob/main/Documentation~/documentation-guide.md) |
 
-The `manual`, `reference`, and `internals` pages describe current behavior at the
-revisions printed on them. Earlier cross-package design proposals remain in the
-[Caelix historical archive](https://github.com/betairylia/Caelix/blob/main/Documentation~/archive/index.md).
-Core had no existing `Documentation~` documents to relocate in this pass.
-
-Cross-repository links target `main`; newly added pages become available there
-when both documentation changes are merged.
+Pages record their reviewed revisions. Cross-repository links target `main` and
+may await merging; local source links follow this checkout.
 
 ## Implementation and tests
 

@@ -55,11 +55,10 @@ frozen app-level slot registry or comprehensive validation against it. Existing
 storage and replication stride checks remain useful diagnostics, but do not
 establish or redefine a slot's application-wide meaning.
 
-## Coordinates and IDs
+## Experimental packed scene materials
 
-### Experimental packed scene materials
-
-The `dev/astra/raw-color-materials` experiment selects its encoding at compile time.
+Packed scene materials select their encoding at compile time (disabled in Core
+`881efac3` and Caelix `3d013d8`, checked 2026-09-16).
 Keep `CAELIX_PACKED_SCENE_COLOR` in `Runtime/BlockEncoding.cs` and Caelix's
 `Runtime/Rendering/Shaders/def/CaelixMaterialConfig.hlsl` enabled together. Comment
 out both defines to use regular block IDs. Restart with the matching scene data;
@@ -81,6 +80,12 @@ Caelix's `Tools~/RawColor` exports native v6 `.cxw` saves directly from voxelize
 source materials. Existing RGB-only VL32 files cannot recover lost emission or
 glass properties. Keep generated scenes outside Unity package/project folders.
 
+## Coordinates and IDs
+
+Consumers use entity-local brick keys through the
+[public brick APIs](../reference/enumerators.md). Sector coordinates and compact
+IDs below describe Core's internal storage.
+
 Entity-local voxel coordinates can be negative. Sector coordinates select the
 sector; sector-local voxel coordinates range from 0 to 127. Brick coordinates
 inside a sector range from 0 to 15. Voxel coordinates inside a brick range from
@@ -90,8 +95,8 @@ integer on each axis.
 An **absolute brick index** addresses a position in the 4,096-entry sector table.
 A **compact brick ID** addresses allocated slot data. They are different index
 spaces. `SectorNonEmptyBrickEnumerator.BrickRef` exposes both as `BrickAbs` and
-`Bid`. Use the conversion/access methods on `Sector`; use the
-[enumerators](../reference/enumerators.md) for traversal.
+`Bid`. Inside Core, use sector accessors; outside Core, use the
+[brick-key APIs](../reference/enumerators.md).
 
 For example, entity-local voxel `(-1, 0, 0)` lies in sector `(-1, 0, 0)` at
 sector-local voxel `(127, 0, 0)`. Ordinary integer division that truncates toward
