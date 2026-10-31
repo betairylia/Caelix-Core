@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0] - 2026-10-31
+
+- Brick-key facade: `VoxelEntityData` is the storage API (`BrickKey`, `TryBindBrick`, `BrickCursor`, `EnumerateBricks`, `OpenNeighborhood`, `VoxelRegion`, `MarkRequired`, `CollectRequiredBricks`) with a per-cycle change list; `Sector*` types are internal to Caelix-Core.
+- Keyed replication: `BrickBatch` records, `BrickBatchApplier`, entity-level record codec; zero-slot Update records are skipped before they create work.
+- Dirty propagation without managed scratch allocation; faster automata reads, snapshot storage and local message buffers; `SparseBrickIdTable` takes a slot count.
+- Packed scene colour encoding and preview support preserved (`CAELIX_PACKED_SCENE_COLOR`).
+- Storage and enumerator guides revised.
+- License: GPL-3.0 with an additional permission (README, "License") for combining with Unity and the Caelix packages.
+
 ## [0.0.1-dev.1]
 
 - Split the core runtime from the original VoxelisX package.

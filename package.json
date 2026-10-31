@@ -1,6 +1,6 @@
 {
   "name": "ink.irylia.caelix.core",
-  "version": "0.1.9-exp.1",
+  "version": "0.2.0",
   "displayName": "Caelix Core",
   "description": "Core voxel data, streaming, ticking, and persistence for Caelix.",
   "unity": "6000.5",
